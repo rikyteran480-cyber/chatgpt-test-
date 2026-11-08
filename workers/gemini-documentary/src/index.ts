@@ -105,13 +105,14 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
         if (!upstream.ok) {
           const providerMessage = String(payload?.error?.message ?? payload?.message ?? "Error del proveedor.");
           const quotaError = upstream.status === 429 || /quota|rate.?limit|resource.?exhausted|billing.*limit/i.test(providerMessage);
-          if (quotaError && index < keys.length - 1) {
+          if (quotaError) {
             lastQuotaMessage = providerMessage;
-            continue;
+            if (index < keys.length - 1) continue;
+            break;
           }
           const detail = index === 1
             ? "La primera cuenta agotó su cuota y la segunda también falló: "
-            : (!hasBackupKey && quotaError ? "La primera cuenta agotó su cuota, pero no se detectó GEMINI_API_KEY_2 en el entorno de producción. " : "Gemini no pudo generar el documental: ");
+            : "Gemini no pudo generar el documental: ";
           return json({ error: detail + providerMessage.slice(0, 400) }, 502, allowedOrigin);
         }
         const output = typeof payload?.output_text === "string"

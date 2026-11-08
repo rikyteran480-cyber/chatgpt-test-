@@ -1,5 +1,6 @@
 export interface Env {
   GEMINI_API_KEY: string;
+  GEMINI_API_KEY_2?: string;
   ALLOWED_ORIGIN?: string;
   GEMINI_MODEL?: string;
 }
@@ -58,7 +59,7 @@ export default {
     }
     if (!env.ALLOWED_ORIGIN) return json({ error: "El backend aún no tiene configurado el origen permitido." }, 503, requestOrigin || "*");
     if (request.method !== "POST") return json({ error: "Método no permitido." }, 405, allowedOrigin);
-    if (!env.GEMINI_API_KEY) return json({ error: "El servicio todavía no está configurado con una clave de Gemini." }, 503, allowedOrigin);
+    if (!env.GEMINI_API_KEY && !env.GEMINI_API_KEY_2) return json({ error: "El servicio todavía no está configurado con una clave de Gemini." }, 503, allowedOrigin);
     if (env.ALLOWED_ORIGIN && requestOrigin !== env.ALLOWED_ORIGIN) return json({ error: "Origen no autorizado." }, 403, env.ALLOWED_ORIGIN);
 
     let body: RequestBody;
@@ -83,39 +84,48 @@ Primero compara el tema con los trabajos anteriores, luego investiga y elige un 
 Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un guion dividido en gancho, desarrollo y cierre y escenas sincronizadas con ese texto.
 `;
 
-    try {
-      const model = "gemini-3.8-flash";
-      const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-        body: JSON.stringify({
-          model,
-          input: SYSTEM_INSTRUCTION + "\n\n" + userPrompt,
-          tools: [{ type: "google_search" }]
-        })
-      });
-      const payload = await upstream.json() as any;
-      if (!upstream.ok) {
-        const providerMessage = payload?.error?.message ?? payload?.message ?? "Error del proveedor.";
-        return json({ error: "Gemini no pudo generar el documental: " + String(providerMessage).slice(0, 500) }, 502, allowedOrigin);
-      }
-      const text = typeof payload?.output_text === "string"
-        ? payload.output_text
-        : (payload?.steps ?? []).flatMap((step: any) => step?.content ?? []).filter((item: any) => item?.type === "text").map((item: any) => item.text ?? "").join("");
-      if (!text) return json({ error: "Gemini devolvió una respuesta vacía mediante Interactions API." }, 502, allowedOrigin);
-      let result: unknown;
+    const model = "gemini-3.8-flash";
+    const keys = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_2].filter((key): key is string => Boolean(key));
+    let lastQuotaMessage = "";
+    for (let index = 0; index < keys.length; index++) {
       try {
-        const cleaned = text.replace(/```(?:json)?/gi, "").trim();
-        const start = cleaned.indexOf("{");
-        const end = cleaned.lastIndexOf("}");
-        if (start < 0 || end <= start) throw new Error("No se encontró un objeto JSON.");
-        result = JSON.parse(cleaned.slice(start, end + 1));
+        const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-goog-api-key": keys[index] },
+          body: JSON.stringify({
+            model,
+            input: SYSTEM_INSTRUCTION + "\n\n" + userPrompt,
+            tools: [{ type: "google_search" }]
+          })
+        });
+        const payload = await upstream.json() as any;
+        if (!upstream.ok) {
+          const providerMessage = String(payload?.error?.message ?? payload?.message ?? "Error del proveedor.");
+          const quotaError = upstream.status === 429 || /quota|rate.?limit|resource.?exhausted|billing.*limit/i.test(providerMessage);
+          if (quotaError && index < keys.length - 1) {
+            lastQuotaMessage = providerMessage;
+            continue;
+          }
+          return json({ error: "Gemini no pudo generar el documental: " + providerMessage.slice(0, 500) }, 502, allowedOrigin);
+        }
+        const output = typeof payload?.output_text === "string"
+          ? payload.output_text
+          : (payload?.steps ?? []).flatMap((step: any) => step?.content ?? []).filter((item: any) => item?.type === "text").map((item: any) => item.text ?? "").join("");
+        if (!output) return json({ error: "Gemini devolvió una respuesta vacía mediante Interactions API." }, 502, allowedOrigin);
+        try {
+          const cleaned = output.replace(/```(?:json)?/gi, "").trim();
+          const jsonStart = cleaned.indexOf("{");
+          const jsonEnd = cleaned.lastIndexOf("}");
+          if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error("No se encontró un objeto JSON.");
+          return json(JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)), 200, allowedOrigin);
+        } catch {
+          return json({ error: "Gemini respondió, pero el formato del documental no se pudo interpretar. Inténtalo otra vez." }, 502, allowedOrigin);
+        }
       } catch {
-        return json({ error: "Gemini respondió, pero el formato del documental no se pudo interpretar. Inténtalo otra vez." }, 502, allowedOrigin);
+        if (index === keys.length - 1) return json({ error: "No se pudo conectar con el servicio de generación." }, 502, allowedOrigin);
       }
-      return json(result, 200, allowedOrigin);
-    } catch {
-      return json({ error: "No se pudo conectar con el servicio de generación." }, 502, allowedOrigin);
     }
+    return json({ error: "Las dos cuentas de Gemini agotaron su cuota. " + lastQuotaMessage.slice(0, 300) }, 429, allowedOrigin);
+
   }
 };

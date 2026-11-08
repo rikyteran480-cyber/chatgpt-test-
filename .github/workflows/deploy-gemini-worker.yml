@@ -1,6 +1,10 @@
 name: Deploy Gemini Worker
 
 on:
+  push:
+    branches:
+      - main
+      - feat/gemini-original-documentary-engine
   workflow_dispatch:
 
 permissions:

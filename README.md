@@ -49,3 +49,13 @@ Consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para conocer la arquitectu
 - Proyectos privados por defecto.
 - No guardar claves de proveedores en el cliente.
 - No realizar publicaciones, compras ni acciones con coste sin confirmación explícita.
+
+
+## Generación documental con Gemini
+Se añadió la primera integración de backend para generar guiones y escenas mediante Gemini con búsqueda web, referencias históricas y reglas editoriales de originalidad. El generador compara el tema con los proyectos previos enviados por el navegador y propone un enfoque diferente. La clave se guarda exclusivamente como secret en el backend.
+
+- Reglas de originalidad: [docs/EDITORIAL_ORIGINALITY.md](docs/EDITORIAL_ORIGINALITY.md)
+- Configuración del backend seguro: [docs/GEMINI_SETUP.md](docs/GEMINI_SETUP.md)
+- Worker: `workers/gemini-documentary`
+
+**Estado:** integración preparada en esta rama, pendiente de configurar y desplegar el Worker, configurar `VITE_GEMINI_API_URL` y ejecutar una prueba real. No está activa en la web publicada todavía.

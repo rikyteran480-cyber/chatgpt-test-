@@ -1,0 +1,12 @@
+{
+  "name": "RikyTech AI Studio",
+  "short_name": "RikyTech",
+  "description": "Estudio de producción audiovisual con inteligencia artificial.",
+  "lang": "es",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#10131b",
+  "theme_color": "#10131b",
+  "scope": "./",
+  "icons": []
+}

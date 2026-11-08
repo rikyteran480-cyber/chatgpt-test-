@@ -108,6 +108,7 @@ export default function App() {
   const [flowImportStatus, setFlowImportStatus] = useState('');
   const [imageBatchStatus, setImageBatchStatus] = useState('');
   const [imageBatchRunning, setImageBatchRunning] = useState(false);
+  const [flowPromptIndex, setFlowPromptIndex] = useState(0);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(projects)); } catch { /* Storage may be disabled or full. */ }
@@ -171,6 +172,22 @@ export default function App() {
     void navigator.clipboard?.writeText(scene.prompt);
     window.open('https://labs.google/fx/tools/flow', '_blank', 'noopener,noreferrer');
   }
+  async function copyNextFlowPrompt() {
+    if (!selected) return;
+    const targets = (selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista');
+    if (!targets.length) return;
+    const index = flowPromptIndex % targets.length;
+    const scene = targets[index];
+    try {
+      await navigator.clipboard.writeText(scene.prompt);
+      setFlowBatchStatus('Prompt de escena ' + (index + 1) + ' de ' + targets.length + ' copiado. En Flow usa el cuadro estándar de generación de imágenes (no Agent), genera y descarga la imagen; después vuelve para copiar el siguiente prompt.');
+      setFlowPromptIndex((index + 1) % targets.length);
+      window.open('https://labs.google/fx/tools/flow', '_blank', 'noopener,noreferrer');
+    } catch {
+      setFlowBatchStatus('No se pudo copiar el prompt. Revisa el permiso del portapapeles del navegador.');
+    }
+  }
+
   async function prepareFlowBatch() {
     if (!selected) return;
     const scenes = (selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista');
@@ -486,15 +503,13 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
               </div>
               <div className="scene-policy">Estilo: fotografía hiperrealista cinematográfica · Formato {selected.format}. Las reconstrucciones generadas se identifican por separado del material histórico auténtico.</div>
               {!!selected.scenes?.some((scene) => scene.imageType === 'Reconstrucción IA fotorrealista') && <div className="flow-batch-panel">
-                <div><div className="eyebrow">GENERACIÓN SECUENCIAL</div><b>Generar y colocar imágenes automáticamente</b><p>RikyTech toma el prompt de cada escena, solicita una imagen y la guarda en la tarjeta correcta antes de continuar con la siguiente.</p></div>
-                <button type="button" className="primary-button" disabled={imageBatchRunning || !(import.meta.env.VITE_IMAGE_GENERATION_URL as string | undefined)} onClick={() => void generateAllSceneImages()}><WandSparkles size={16}/>{imageBatchRunning ? 'Generando imágenes…' : 'Generar todas las escenas'}</button>
-                {!(import.meta.env.VITE_IMAGE_GENERATION_URL as string | undefined) && <p className="flow-batch-hint">El flujo automático ya está preparado, pero falta conectar un proveedor de imágenes compatible. No se ha configurado ninguno para evitar cargos o consumo de créditos sin tu autorización.</p>}
-                {imageBatchStatus && <p className="ai-generator-status" role="status">{imageBatchStatus}</p>}
-                <button type="button" className="primary-button" onClick={() => void prepareFlowBatch()}><ExternalLink size={16}/> Preparar lote y abrir Flow</button>
-                <label className="flow-batch-import"><Upload size={16}/> Importar varias imágenes de Flow
+                <div><div className="eyebrow">GOOGLE FLOW · MODO GRATUITO</div><b>Generar imágenes escena por escena</b><p>Google Flow permite generar imágenes desde su cuadro estándar sin descontar créditos mensuales, sujeto a límites diarios. Para evitar usar créditos, no actives Agent ni generación de vídeo. RikyTech puede preparar cada prompt y después asignar las imágenes que descargues.</p></div>
+                <button type="button" className="primary-button" onClick={() => void copyNextFlowPrompt()}><ExternalLink size={16}/> Copiar siguiente prompt y abrir Flow</button>
+                <p className="flow-batch-hint">Avance de prompts: {flowPromptIndex + 1} de {(selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista').length}. Genera con el cuadro estándar de imágenes de Flow y descarga cada resultado. El navegador no permite a RikyTech controlar directamente tu sesión de Google Flow.</p>
+                <label className="flow-batch-import"><Upload size={16}/> Importar imágenes descargadas
                   <input type="file" accept="image/*" multiple onChange={(e) => { void importFlowBatchImages(e.currentTarget.files); e.currentTarget.value = ''; }}/>
                 </label>
-                <p className="flow-batch-hint">Selecciona juntas las imágenes descargadas. Se ordenan por nombre (01, 02, 03…) y se asignan a las escenas IA en ese orden. Máximo 20 MB por imagen.</p>
+                <p className="flow-batch-hint">Selecciona todas las imágenes descargadas. Se ordenan por nombre (01, 02, 03…) y se asignan a las escenas IA en ese orden. Máximo 20 MB por imagen.</p>
                 {flowBatchStatus && <p className="ai-generator-status" role="status">{flowBatchStatus}</p>}
                 {flowImportStatus && <p className="ai-generator-status" role="status">{flowImportStatus}</p>}
               </div>}

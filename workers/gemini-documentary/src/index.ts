@@ -97,13 +97,20 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
       });
       const payload = await upstream.json() as any;
       if (!upstream.ok) {
-        return json({ error: "Gemini no pudo generar el documental.", details: payload?.error?.message ?? "Error del proveedor." }, 502, allowedOrigin);
+        return json({ error: "Gemini no pudo generar el documental: " + String(payload?.error?.message ?? "Error del proveedor.").slice(0, 500) }, 502, allowedOrigin);
       }
       const text = payload?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? "").join("");
       if (!text) return json({ error: "Gemini devolvió una respuesta vacía." }, 502, allowedOrigin);
       let result: unknown;
-      try { result = JSON.parse(text); }
-      catch { return json({ error: "La respuesta de Gemini no tuvo el formato esperado." }, 502, allowedOrigin); }
+      try {
+        const cleaned = text.replace(/```(?:json)?/gi, "").trim();
+        const start = cleaned.indexOf("{");
+        const end = cleaned.lastIndexOf("}");
+        if (start < 0 || end <= start) throw new Error("No se encontró un objeto JSON.");
+        result = JSON.parse(cleaned.slice(start, end + 1));
+      } catch {
+        return json({ error: "Gemini respondió, pero el formato del documental no se pudo interpretar. Inténtalo otra vez." }, 502, allowedOrigin);
+      }
       return json(result, 200, allowedOrigin);
     } catch {
       return json({ error: "No se pudo conectar con el servicio de generación." }, 502, allowedOrigin);

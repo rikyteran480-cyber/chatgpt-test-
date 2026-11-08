@@ -104,6 +104,7 @@ export default function App() {
   const [aiError, setAiError] = useState('');
   const [manualPromptCopied, setManualPromptCopied] = useState(false);
   const [flowBatchStatus, setFlowBatchStatus] = useState('');
+  const [flowImportStatus, setFlowImportStatus] = useState('');
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(projects)); } catch { /* Storage may be disabled or full. */ }
@@ -195,6 +196,32 @@ export default function App() {
     } catch {
       setFlowBatchStatus('Flow se abrió, pero no se pudo copiar el lote. Usa «Copiar prompt» en cada escena.');
     }
+  }
+
+  async function importFlowBatchImages(files: FileList | null) {
+    if (!selected || !files?.length) return;
+    const targets = (selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista');
+    const orderedFiles = Array.from(files).filter((file) => file.type.startsWith('image/'))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    if (!orderedFiles.length) {
+      setFlowImportStatus('No se encontraron archivos de imagen válidos.');
+      return;
+    }
+    if (orderedFiles.some((file) => file.size > 20 * 1024 * 1024)) {
+      setFlowImportStatus('Hay imágenes que superan el límite de 20 MB. Reduce su tamaño e inténtalo de nuevo.');
+      return;
+    }
+    const count = Math.min(targets.length, orderedFiles.length);
+    let imported = 0;
+    for (let i = 0; i < count; i += 1) {
+      try {
+        await importSceneImage(targets[i].id, orderedFiles[i]);
+        imported += 1;
+      } catch { /* importSceneImage reports per-image errors */ }
+    }
+    const extra = orderedFiles.length > targets.length ? ' Sobran ' + (orderedFiles.length - targets.length) + ' archivo(s).' : '';
+    const missing = orderedFiles.length < targets.length ? ' Faltan ' + (targets.length - orderedFiles.length) + ' imagen(es) para completar el lote.' : '';
+    setFlowImportStatus(imported + ' de ' + count + ' imágenes importadas y asignadas en orden de nombre a las escenas.' + extra + missing);
   }
 
   async function importSceneImage(sceneId: string, file: File | null) {
@@ -424,7 +451,12 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
               {!!selected.scenes?.some((scene) => scene.imageType === 'Reconstrucción IA fotorrealista') && <div className="flow-batch-panel">
                 <div><div className="eyebrow">PUENTE CON GOOGLE FLOW</div><b>Preparar generación de imágenes</b><p>Prepara en un solo lote los prompts de todas las reconstrucciones, abre Flow y deja el material listo para generar escena por escena. La generación ocurre en Flow; RikyTech no consume una API de imágenes.</p></div>
                 <button type="button" className="primary-button" onClick={() => void prepareFlowBatch()}><ExternalLink size={16}/> Preparar lote y abrir Flow</button>
+                <label className="flow-batch-import"><Upload size={16}/> Importar varias imágenes de Flow
+                  <input type="file" accept="image/*" multiple onChange={(e) => { void importFlowBatchImages(e.currentTarget.files); e.currentTarget.value = ''; }}/>
+                </label>
+                <p className="flow-batch-hint">Selecciona juntas las imágenes descargadas. Se ordenan por nombre (01, 02, 03…) y se asignan a las escenas IA en ese orden. Máximo 20 MB por imagen.</p>
                 {flowBatchStatus && <p className="ai-generator-status" role="status">{flowBatchStatus}</p>}
+                {flowImportStatus && <p className="ai-generator-status" role="status">{flowImportStatus}</p>}
               </div>}
               {!(selected.scenes?.length) ? <div className="scene-empty"><Images size={25}/><b>Todavía no hay escenas</b><span>Escribe primero el guion y pulsa «Generar escenas». También puedes añadir una escena manualmente.</span><button className="secondary-button" onClick={addScene}>Añadir escena vacía</button></div> : <>
                 <div className="scene-summary"><b>{selected.scenes.length} escenas</b><span>{selected.scenes.reduce((sum, scene) => sum + scene.duration, 0)} segundos estimados</span></div>

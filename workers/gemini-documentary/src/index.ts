@@ -1,6 +1,7 @@
 export interface Env {
   GEMINI_API_KEY: string;
   GEMINI_API_KEY_2?: string;
+  OPENROUTER_API_KEY?: string;
   ALLOWED_ORIGIN?: string;
   GEMINI_MODEL?: string;
 }
@@ -130,7 +131,39 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
         if (index === keys.length - 1) return json({ error: "No se pudo conectar con el servicio de generación." }, 502, allowedOrigin);
       }
     }
-    return json({ error: hasPrimaryKey && hasBackupKey ? "Las dos cuentas de Gemini agotaron su cuota. " + lastQuotaMessage.slice(0, 300) : "No está configurada la clave secundaria GEMINI_API_KEY_2 en Producción." }, 429, allowedOrigin);
+    if (env.OPENROUTER_API_KEY) {
+      try {
+        const fallbackPrompt = SYSTEM_INSTRUCTION + "\n\n" + userPrompt + "\n\nIMPORTANTE: No tienes búsqueda web en tiempo real. No afirmes que consultaste fuentes ahora. No inventes URLs ni referencias: incluye solo enlaces que conozcas con alta confianza; de lo contrario deja sources vacío y añade los datos no confirmados a factsToVerify. Indica en editorialNote que el borrador requiere verificación documental antes de publicarse.";
+        const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { "content-type": "application/json", "authorization": "Bearer " + env.OPENROUTER_API_KEY, "http-referer": "https://rikyteran480-cyber.github.io/chatgpt-test-/", "x-title": "RikyTech AI Studio" },
+          body: JSON.stringify({ model: "openrouter/free", messages: [{ role: "user", content: fallbackPrompt }], temperature: 0.5, max_tokens: 7000 })
+        });
+        const payload = await upstream.json() as any;
+        if (!upstream.ok) {
+          const message = String(payload?.error?.message ?? "OpenRouter no pudo completar la solicitud.");
+          return json({ error: "Gemini agotó sus cuotas y OpenRouter también falló: " + message.slice(0, 350) }, 502, allowedOrigin);
+        }
+        const output = payload?.choices?.[0]?.message?.content;
+        if (typeof output !== "string" || !output.trim()) return json({ error: "OpenRouter respondió sin contenido. Inténtalo de nuevo." }, 502, allowedOrigin);
+        try {
+          const cleaned = output.replace(/```(?:json)?/gi, "").trim();
+          const jsonStart = cleaned.indexOf("{");
+          const jsonEnd = cleaned.lastIndexOf("}");
+          if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error("No se encontró un objeto JSON.");
+          const result = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+          result.editorialNote = [result.editorialNote, "Proveedor alternativo OpenRouter: este borrador no tuvo búsqueda web en tiempo real. Verifica las fuentes y afirmaciones antes de publicar."].filter(Boolean).join(" ");
+          result.sources = Array.isArray(result.sources) ? result.sources : [];
+          result.factsToVerify = Array.isArray(result.factsToVerify) ? result.factsToVerify : [];
+          return json(result, 200, allowedOrigin);
+        } catch {
+          return json({ error: "OpenRouter generó texto, pero no se pudo interpretar como documental estructurado. Inténtalo otra vez." }, 502, allowedOrigin);
+        }
+      } catch {
+        return json({ error: "Gemini agotó sus cuotas y no se pudo conectar con OpenRouter." }, 502, allowedOrigin);
+      }
+    }
+    return json({ error: hasPrimaryKey && hasBackupKey ? "Las dos cuentas de Gemini agotaron su cuota y no hay una clave OPENROUTER_API_KEY configurada en Producción. " + lastQuotaMessage.slice(0, 250) : "No hay un proveedor alternativo configurado. Añade OPENROUTER_API_KEY en Cloudflare Production." }, 429, allowedOrigin);
 
   }
 };

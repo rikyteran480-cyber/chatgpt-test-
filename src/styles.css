@@ -49,3 +49,7 @@
 .flow-batch-panel b { display: block; margin-top: 4px; }
 .flow-batch-panel p { margin: 7px 0 0; color: var(--muted, #a7adbb); line-height: 1.55; font-size: .92rem; }
 .flow-batch-panel .ai-generator-status { margin: 0; }
+
+.flow-batch-import{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px;border:1px solid #514878;border-radius:9px;background:#211e32;color:#d1c8ff;font:600 12px 'DM Sans';cursor:pointer}
+.flow-batch-import input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.flow-batch-hint{font-size:11px!important;line-height:1.5;color:var(--muted,#a7adbb)}

@@ -64,7 +64,7 @@ function json(data: unknown, status: number, origin: string) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestOrigin = request.headers.get("Origin") ?? "";
-    const allowedOrigin = env.ALLOWED_ORIGIN || requestOrigin;
+    const allowedOrigin = env.ALLOWED_ORIGIN || "";
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: {
         "access-control-allow-origin": allowedOrigin,
@@ -73,6 +73,7 @@ export default {
         "vary": "Origin"
       }});
     }
+    if (!env.ALLOWED_ORIGIN) return json({ error: "El backend aún no tiene configurado el origen permitido." }, 503, requestOrigin || "*");
     if (request.method !== "POST") return json({ error: "Método no permitido." }, 405, allowedOrigin);
     if (!env.GEMINI_API_KEY) return json({ error: "El servicio todavía no está configurado con una clave de Gemini." }, 503, allowedOrigin);
     if (env.ALLOWED_ORIGIN && requestOrigin !== env.ALLOWED_ORIGIN) return json({ error: "Origen no autorizado." }, 403, env.ALLOWED_ORIGIN);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Clapperboard, FileText, Images, Film, Settings, Plus, Smartphone, ExternalLink, Menu, X, Search, FolderOpen, Trash2, Pencil, ArrowLeft, Clock3, Play, Save, Upload, Image as ImageIcon, XCircle, WandSparkles } from 'lucide-react';
 import { deleteSceneImage, getSceneImage, saveSceneImage } from './imageStore';
 import { generateDocumentary } from './gemini';
+import { generateSceneImage } from './imageGeneration';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
@@ -105,6 +106,8 @@ export default function App() {
   const [manualPromptCopied, setManualPromptCopied] = useState(false);
   const [flowBatchStatus, setFlowBatchStatus] = useState('');
   const [flowImportStatus, setFlowImportStatus] = useState('');
+  const [imageBatchStatus, setImageBatchStatus] = useState('');
+  const [imageBatchRunning, setImageBatchRunning] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(projects)); } catch { /* Storage may be disabled or full. */ }
@@ -221,6 +224,39 @@ export default function App() {
     const extra = orderedFiles.length > targets.length ? ' Sobran ' + (orderedFiles.length - targets.length) + ' archivo(s).' : '';
     const missing = orderedFiles.length < targets.length ? ' Faltan ' + (targets.length - orderedFiles.length) + ' imagen(es) para completar el lote.' : '';
     setFlowImportStatus(imported + ' de ' + count + ' imágenes importadas y asignadas en orden de nombre a las escenas.' + extra + missing);
+  }
+
+  async function generateAllSceneImages() {
+    if (!selected || imageBatchRunning) return;
+    const targets = (selected.scenes ?? []).filter((scene) =>
+      scene.imageType === 'Reconstrucción IA fotorrealista' && !sceneImageUrls[scene.id]
+    );
+    if (!targets.length) {
+      setImageBatchStatus('No hay escenas pendientes de imagen.');
+      return;
+    }
+    setImageBatchRunning(true);
+    setImageBatchStatus('Preparando generación secuencial…');
+    let completed = 0;
+    try {
+      for (let index = 0; index < targets.length; index += 1) {
+        const scene = targets[index];
+        setImageBatchStatus('Generando escena ' + (index + 1) + ' de ' + targets.length + '…');
+        try {
+          const blob = await generateSceneImage({ prompt: scene.prompt, format: selected.format, sceneId: scene.id });
+          const file = new File([blob], 'escena-' + String((selected.scenes ?? []).findIndex((item) => item.id === scene.id) + 1).padStart(2, '0') + '.png', { type: blob.type || 'image/png' });
+          if (await importSceneImage(scene.id, file)) completed += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Error desconocido';
+          setSceneImageErrors((items) => ({ ...items, [scene.id]: message }));
+          setImageBatchStatus('Se detuvo en la escena ' + (index + 1) + '. ' + message + ' Las imágenes anteriores ya quedaron guardadas.');
+          return;
+        }
+      }
+      setImageBatchStatus(completed + ' imágenes generadas y guardadas en sus escenas correspondientes.');
+    } finally {
+      setImageBatchRunning(false);
+    }
   }
 
   async function importSceneImage(sceneId: string, file: File | null): Promise<boolean> {
@@ -450,7 +486,10 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
               </div>
               <div className="scene-policy">Estilo: fotografía hiperrealista cinematográfica · Formato {selected.format}. Las reconstrucciones generadas se identifican por separado del material histórico auténtico.</div>
               {!!selected.scenes?.some((scene) => scene.imageType === 'Reconstrucción IA fotorrealista') && <div className="flow-batch-panel">
-                <div><div className="eyebrow">PUENTE CON GOOGLE FLOW</div><b>Preparar generación de imágenes</b><p>Prepara en un solo lote los prompts de todas las reconstrucciones, abre Flow y deja el material listo para generar escena por escena. La generación ocurre en Flow; RikyTech no consume una API de imágenes.</p></div>
+                <div><div className="eyebrow">GENERACIÓN SECUENCIAL</div><b>Generar y colocar imágenes automáticamente</b><p>RikyTech toma el prompt de cada escena, solicita una imagen y la guarda en la tarjeta correcta antes de continuar con la siguiente.</p></div>
+                <button type="button" className="primary-button" disabled={imageBatchRunning || !(import.meta.env.VITE_IMAGE_GENERATION_URL as string | undefined)} onClick={() => void generateAllSceneImages()}><WandSparkles size={16}/>{imageBatchRunning ? 'Generando imágenes…' : 'Generar todas las escenas'}</button>
+                {!(import.meta.env.VITE_IMAGE_GENERATION_URL as string | undefined) && <p className="flow-batch-hint">El flujo automático ya está preparado, pero falta conectar un proveedor de imágenes compatible. No se ha configurado ninguno para evitar cargos o consumo de créditos sin tu autorización.</p>}
+                {imageBatchStatus && <p className="ai-generator-status" role="status">{imageBatchStatus}</p>}
                 <button type="button" className="primary-button" onClick={() => void prepareFlowBatch()}><ExternalLink size={16}/> Preparar lote y abrir Flow</button>
                 <label className="flow-batch-import"><Upload size={16}/> Importar varias imágenes de Flow
                   <input type="file" accept="image/*" multiple onChange={(e) => { void importFlowBatchImages(e.currentTarget.files); e.currentTarget.value = ''; }}/>

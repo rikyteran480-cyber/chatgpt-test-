@@ -103,6 +103,7 @@ export default function App() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [manualPromptCopied, setManualPromptCopied] = useState(false);
+  const [flowBatchStatus, setFlowBatchStatus] = useState('');
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(projects)); } catch { /* Storage may be disabled or full. */ }
@@ -166,6 +167,37 @@ export default function App() {
     void navigator.clipboard?.writeText(scene.prompt);
     window.open('https://labs.google/fx/tools/flow', '_blank', 'noopener,noreferrer');
   }
+  async function prepareFlowBatch() {
+    if (!selected) return;
+    const scenes = (selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista');
+    if (!scenes.length) {
+      setFlowBatchStatus('No hay escenas de reconstrucción IA para enviar a Flow.');
+      return;
+    }
+    const batch = [
+      'RIKYTECH AI STUDIO — LOTE DE PROMPTS PARA GOOGLE FLOW',
+      'Proyecto: ' + selected.name,
+      'Formato: ' + selected.format,
+      'Instrucción: genera cada escena por separado y conserva el número de escena para importar cada imagen en su lugar.',
+      '',
+      ...scenes.flatMap((scene) => {
+        const index = (selected.scenes ?? []).findIndex((item) => item.id === scene.id) + 1;
+        return ['========== ESCENA ' + String(index).padStart(2, '0') + ' ==========',
+          'NARRACIÓN: ' + scene.narration,
+          'PROMPT: ' + scene.prompt,
+          ''];
+      })
+    ].join('\\n');
+    const flowTab = window.open('https://labs.google/fx/tools/flow', '_blank', 'noopener,noreferrer');
+    try {
+      await navigator.clipboard.writeText(batch);
+      setFlowBatchStatus(scenes.length + ' prompts copiados. En Flow, genera cada escena por separado y luego vuelve aquí para importar las imágenes en sus tarjetas.');
+    } catch {
+      setFlowBatchStatus('Flow se abrió, pero no se pudo copiar el lote. Usa «Copiar prompt» en cada escena.');
+    }
+    if (!flowTab) setFlowBatchStatus((current) => current + ' Si Flow no se abrió, permite las ventanas emergentes del navegador.');
+  }
+
   async function importSceneImage(sceneId: string, file: File | null) {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -390,6 +422,11 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
                 <button type="button" className="primary-button" onClick={generateScenes}><WandSparkles size={16}/> {selected.scenes?.length ? 'Regenerar escenas (opcional)' : 'Generar escenas desde el guion'}</button>
               </div>
               <div className="scene-policy">Estilo: fotografía hiperrealista cinematográfica · Formato {selected.format}. Las reconstrucciones generadas se identifican por separado del material histórico auténtico.</div>
+              {!!selected.scenes?.some((scene) => scene.imageType === 'Reconstrucción IA fotorrealista') && <div className="flow-batch-panel">
+                <div><div className="eyebrow">PUENTE CON GOOGLE FLOW</div><b>Preparar generación de imágenes</b><p>Prepara en un solo lote los prompts de todas las reconstrucciones, abre Flow y deja el material listo para generar escena por escena. La generación ocurre en Flow; RikyTech no consume una API de imágenes.</p></div>
+                <button type="button" className="primary-button" onClick={() => void prepareFlowBatch()}><ExternalLink size={16}/> Preparar lote y abrir Flow</button>
+                {flowBatchStatus && <p className="ai-generator-status" role="status">{flowBatchStatus}</p>}
+              </div>}
               {!(selected.scenes?.length) ? <div className="scene-empty"><Images size={25}/><b>Todavía no hay escenas</b><span>Escribe primero el guion y pulsa «Generar escenas». También puedes añadir una escena manualmente.</span><button className="secondary-button" onClick={addScene}>Añadir escena vacía</button></div> : <>
                 <div className="scene-summary"><b>{selected.scenes.length} escenas</b><span>{selected.scenes.reduce((sum, scene) => sum + scene.duration, 0)} segundos estimados</span></div>
                 <div className="scene-list">{selected.scenes.map((scene, index) => <article className="scene-card" key={scene.id}>

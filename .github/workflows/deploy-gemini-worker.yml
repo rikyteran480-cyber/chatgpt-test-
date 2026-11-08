@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: gemini-worker-deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Deploy secure Gemini backend

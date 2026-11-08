@@ -187,7 +187,7 @@ export default function App() {
           'PROMPT: ' + scene.prompt,
           ''];
       })
-    ].join('\\n');
+    ].join('\n');
     window.open('https://labs.google/fx/tools/flow', '_blank', 'noopener,noreferrer');
     try {
       await navigator.clipboard.writeText(batch);

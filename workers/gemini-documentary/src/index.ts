@@ -84,23 +84,25 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
 `;
 
     try {
-      const model = env.GEMINI_MODEL || "gemini-2.5-flash";
-      const upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      const model = env.GEMINI_MODEL || "gemini-3.8-flash";
+      const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          tools: [{ google_search: {} }],
-          generationConfig: { temperature: 0.85 }
+          model,
+          input: SYSTEM_INSTRUCTION + "\\n\\n" + userPrompt,
+          tools: [{ type: "google_search" }]
         })
       });
       const payload = await upstream.json() as any;
       if (!upstream.ok) {
-        return json({ error: "Gemini no pudo generar el documental: " + String(payload?.error?.message ?? "Error del proveedor.").slice(0, 500) }, 502, allowedOrigin);
+        const providerMessage = payload?.error?.message ?? payload?.message ?? "Error del proveedor.";
+        return json({ error: "Gemini no pudo generar el documental: " + String(providerMessage).slice(0, 500) }, 502, allowedOrigin);
       }
-      const text = payload?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? "").join("");
-      if (!text) return json({ error: "Gemini devolvió una respuesta vacía." }, 502, allowedOrigin);
+      const text = typeof payload?.output_text === "string"
+        ? payload.output_text
+        : (payload?.steps ?? []).flatMap((step: any) => step?.content ?? []).filter((item: any) => item?.type === "text").map((item: any) => item.text ?? "").join("");
+      if (!text) return json({ error: "Gemini devolvió una respuesta vacía mediante Interactions API." }, 502, allowedOrigin);
       let result: unknown;
       try {
         const cleaned = text.replace(/```(?:json)?/gi, "").trim();

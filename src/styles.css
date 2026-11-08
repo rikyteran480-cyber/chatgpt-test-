@@ -33,3 +33,5 @@
 .scene-image-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
 .remove-scene-image{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;border:0;background:transparent;color:#ffb7b7;font:10px 'DM Sans';padding:5px 0;cursor:pointer}
 .scene-image-import .scene-generated-preview{margin-top:12px}
+
+.ai-documentary-panel{margin:28px 0;padding:25px;border:1px solid #373149;border-radius:18px;background:linear-gradient(135deg,#201c35,#191d29);display:grid;gap:13px}.ai-documentary-panel h2{margin:0;font:600 25px 'Space Grotesk',sans-serif}.ai-documentary-panel>p{margin:0;color:#aeb3c2;line-height:1.65}.ai-documentary-panel .primary-button{width:100%;justify-content:center}.ai-documentary-panel .primary-button:disabled{opacity:.65;cursor:wait}.ai-editorial-result,.ai-editorial-note{padding:13px 15px;border-left:3px solid #9c8cff;background:#29243d;color:#d5d0eb;line-height:1.6}.ai-error{color:#ff9c9c!important}.ai-sources{border-top:1px solid #393449;padding-top:12px;color:#c9c4da}.ai-sources p{font-size:13px;line-height:1.5}.ai-sources a{color:#b8aaff}

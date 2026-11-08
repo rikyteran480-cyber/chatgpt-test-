@@ -28,25 +28,8 @@ REGLAS EDITORIALES OBLIGATORIAS:
 9. Genera escenas que sigan la narración. Distingue archivo/fotografía auténtica de reconstrucción IA; nunca describas una recreación como foto histórica real.
 10. No afirmes que una imagen auténtica existe si no has localizado una fuente verificable.
 
-Devuelve únicamente JSON válido conforme al esquema solicitado. No incluyas Markdown.
+Devuelve únicamente un objeto JSON válido con todos los campos solicitados: editorialAngle, editorialNote, noveltyCheck, hook, development, closing, estimatedSeconds, factsToVerify, sources y scenes. No incluyas Markdown ni texto fuera del JSON.
 `;
-
-const schema = {
-  type: "OBJECT",
-  properties: {
-    editorialAngle: { type: "STRING" },
-    editorialNote: { type: "STRING" },
-    noveltyCheck: { type: "STRING" },
-    hook: { type: "STRING" },
-    development: { type: "STRING" },
-    closing: { type: "STRING" },
-    estimatedSeconds: { type: "INTEGER" },
-    factsToVerify: { type: "ARRAY", items: { type: "STRING" } },
-    sources: { type: "ARRAY", items: { type: "OBJECT", properties: { title: { type: "STRING" }, url: { type: "STRING" }, relevance: { type: "STRING" } }, required: ["title", "url", "relevance"] } },
-    scenes: { type: "ARRAY", items: { type: "OBJECT", properties: { narration: { type: "STRING" }, visualDescription: { type: "STRING" }, imageType: { type: "STRING", enum: ["Archivo o fotografía auténtica", "Reconstrucción IA fotorrealista"] }, prompt: { type: "STRING" }, duration: { type: "INTEGER" } }, required: ["narration", "visualDescription", "imageType", "prompt", "duration"] } }
-  },
-  required: ["editorialAngle", "editorialNote", "noveltyCheck", "hook", "development", "closing", "estimatedSeconds", "factsToVerify", "sources", "scenes"]
-};
 
 function json(data: unknown, status: number, origin: string) {
   return new Response(JSON.stringify(data), {
@@ -109,7 +92,7 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
           systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
           tools: [{ google_search: {} }],
-          generationConfig: { temperature: 0.85, responseMimeType: "application/json", responseSchema: schema }
+          generationConfig: { temperature: 0.85 }
         })
       });
       const payload = await upstream.json() as any;

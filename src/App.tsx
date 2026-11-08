@@ -68,6 +68,7 @@ export default function App() {
   const [sceneImageErrors, setSceneImageErrors] = useState<Record<string, string>>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [manualPromptCopied, setManualPromptCopied] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(projects)); } catch { /* Storage may be disabled or full. */ }
@@ -222,6 +223,29 @@ export default function App() {
     updateScenes([...(selected.scenes ?? []), scene]);
   }
 
+  async function prepareWithoutGemini() {
+    if (!selected) return;
+    const previousWorks = projects.filter((project) => project.id !== selected.id)
+      .map((project) => `- ${project.name}: ${project.editorialAngle || project.description || 'Sin resumen'}`).join('\\n');
+    const prompt = `Actúa como investigador y guionista de documentales históricos para RikyTech AI Studio.
+Tema: ${selected.name}. Descripción: ${selected.description || 'Sin descripción'}.
+Duración: ${selected.duration} segundos. Formato: ${selected.format}.
+Escribe en español, con tono documental cinematográfico, un gancho original, desarrollo y cierre, aproximadamente ${Math.round(selected.duration * 2.35)} palabras en total.
+Verifica los hechos con fuentes reales y enlaces; distingue hechos, hipótesis y leyendas. No inventes fechas, citas ni URLs. Si no puedes consultar fuentes, indícalo y señala qué debe verificarse.
+Evita repetir enfoques de trabajos anteriores:
+${previousWorks || 'No hay trabajos anteriores registrados'}.
+Entrega el resultado con tres apartados claramente identificados: GANCHO, DESARROLLO y CIERRE; después FUENTES y DATOS POR VERIFICAR. No incluyas indicaciones de cámara en la narración.
+Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin usar Gemini.`;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setManualPromptCopied(true);
+      setAiError('');
+    } catch {
+      setManualPromptCopied(false);
+      setAiError('No se pudo copiar automáticamente. Comprueba los permisos del portapapeles del navegador.');
+    }
+  }
+
   async function generateWithAI() {
     if (!selected || aiLoading) return;
     setAiLoading(true);
@@ -308,12 +332,16 @@ export default function App() {
             <section className="ai-generator-panel">
               <div className="ai-generator-copy">
                 <div className="eyebrow">INVESTIGACIÓN Y REDACCIÓN CON IA</div>
-                <h2>Crear documental con Gemini</h2>
-                <p>Investiga el tema, prepara un guion documental y organiza las escenas con fuentes para su verificación.</p>
+                <h2>Crear documental con IA o sin créditos</h2>
+                <p>Gemini genera el documental automáticamente cuando tiene cuota. Si se agota, copia un encargo de investigación para usarlo en ChatGPT u otro asistente, pega el guion en el editor y genera las escenas aquí sin gastar créditos de Gemini.</p>
               </div>
               <button type="button" className="primary-button" onClick={generateWithAI} disabled={aiLoading}>
                 <WandSparkles size={17}/> {aiLoading ? 'Gemini está investigando y escribiendo…' : 'Generar documental con Gemini'}
               </button>
+              <button type="button" className="secondary-button" onClick={() => void prepareWithoutGemini()}>
+                <FileText size={16}/> Preparar documental sin Gemini (copiar encargo)
+              </button>
+              {manualPromptCopied && <p className="ai-generator-status" role="status">Encargo copiado. Pégalo en ChatGPT u otro asistente, revisa las fuentes y copia el gancho, desarrollo y cierre al editor de abajo. Después pulsa «Generar escenas desde el guion». Esta opción no consume cuota de Gemini.</p>}
               {aiLoading && <p className="ai-generator-status">Esto puede tardar unos segundos. No cierres esta pantalla.</p>}
               {aiError && <p className="ai-generator-error" role="alert">{aiError}</p>}
               {selected.editorialAngle && <div className="ai-editorial-result"><b>Enfoque editorial:</b> {selected.editorialAngle}{selected.editorialNote && <p>{selected.editorialNote}</p>}</div>}

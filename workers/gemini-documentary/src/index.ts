@@ -33,6 +33,30 @@ REGLAS EDITORIALES OBLIGATORIAS:
 Devuelve únicamente un objeto JSON válido con todos los campos solicitados: editorialAngle, editorialNote, noveltyCheck, hook, development, closing, estimatedSeconds, factsToVerify, sources y scenes. No incluyas Markdown ni texto fuera del JSON.
 `;
 
+function extractJsonObject(raw: string): any {
+  const text = raw.replace(/﻿/g, "").trim();
+  const start = text.indexOf("{");
+  if (start < 0) throw new Error("No se encontró un objeto JSON.");
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) {
+      const parsed = JSON.parse(text.slice(start, i + 1));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("La respuesta JSON no es un objeto.");
+      return parsed;
+    }
+  }
+  throw new Error("El objeto JSON llegó incompleto.");
+}
+
 function json(data: unknown, status: number, origin: string) {
   return new Response(JSON.stringify(data), {
     status,
@@ -138,21 +162,18 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
         const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: { "content-type": "application/json", "authorization": "Bearer " + env.OPENROUTER_API_KEY, "http-referer": "https://rikyteran480-cyber.github.io/chatgpt-test-/", "x-title": "RikyTech AI Studio" },
-          body: JSON.stringify({ model: "openrouter/free", messages: [{ role: "user", content: fallbackPrompt }], temperature: 0.5, max_tokens: 7000 })
+          body: JSON.stringify({ model: "openrouter/free", messages: [{ role: "user", content: fallbackPrompt }], response_format: { type: "json_object" }, temperature: 0.3, max_tokens: 9000 })
         });
         const payload = await upstream.json() as any;
         if (!upstream.ok) {
           const message = String(payload?.error?.message ?? "OpenRouter no pudo completar la solicitud.");
           return json({ error: "Gemini agotó sus cuotas y OpenRouter también falló: " + message.slice(0, 350) }, 502, allowedOrigin);
         }
-        const output = payload?.choices?.[0]?.message?.content;
+        const rawContent = payload?.choices?.[0]?.message?.content;
+        const output = Array.isArray(rawContent) ? rawContent.map((part: any) => typeof part === "string" ? part : part?.text ?? "").join("\\n") : rawContent;
         if (typeof output !== "string" || !output.trim()) return json({ error: "OpenRouter respondió sin contenido. Inténtalo de nuevo." }, 502, allowedOrigin);
         try {
-          const cleaned = output.replace(/```(?:json)?/gi, "").trim();
-          const jsonStart = cleaned.indexOf("{");
-          const jsonEnd = cleaned.lastIndexOf("}");
-          if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error("No se encontró un objeto JSON.");
-          const result = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+          const result = extractJsonObject(output);
           result.editorialNote = [result.editorialNote, "Proveedor alternativo OpenRouter: este borrador no tuvo búsqueda web en tiempo real. Verifica las fuentes y afirmaciones antes de publicar."].filter(Boolean).join(" ");
           result.sources = Array.isArray(result.sources) ? result.sources : [];
           result.factsToVerify = Array.isArray(result.factsToVerify) ? result.factsToVerify : [];

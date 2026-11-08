@@ -4,5 +4,6 @@ compatibility_date = "2026-11-07"
 
 [vars]
 GEMINI_MODEL = "gemini-2.5-flash"
+ALLOWED_ORIGIN = "https://rikyteran480-cyber.github.io"
 # Configura ALLOWED_ORIGIN con el dominio exacto de GitHub Pages antes de publicar.
 # Guarda GEMINI_API_KEY como secret con: npx wrangler secret put GEMINI_API_KEY

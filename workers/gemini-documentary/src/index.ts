@@ -85,6 +85,8 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
 `;
 
     const model = "gemini-3.8-flash";
+    const hasPrimaryKey = Boolean(env.GEMINI_API_KEY);
+    const hasBackupKey = Boolean(env.GEMINI_API_KEY_2);
     const keys = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_2].filter((key): key is string => Boolean(key));
     let lastQuotaMessage = "";
     for (let index = 0; index < keys.length; index++) {
@@ -106,7 +108,10 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
             lastQuotaMessage = providerMessage;
             continue;
           }
-          return json({ error: "Gemini no pudo generar el documental: " + providerMessage.slice(0, 500) }, 502, allowedOrigin);
+          const detail = index === 1
+            ? "La primera cuenta agotó su cuota y la segunda también falló: "
+            : (!hasBackupKey && quotaError ? "La primera cuenta agotó su cuota, pero no se detectó GEMINI_API_KEY_2 en el entorno de producción. " : "Gemini no pudo generar el documental: ");
+          return json({ error: detail + providerMessage.slice(0, 400) }, 502, allowedOrigin);
         }
         const output = typeof payload?.output_text === "string"
           ? payload.output_text
@@ -125,7 +130,7 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
         if (index === keys.length - 1) return json({ error: "No se pudo conectar con el servicio de generación." }, 502, allowedOrigin);
       }
     }
-    return json({ error: "Las dos cuentas de Gemini agotaron su cuota. " + lastQuotaMessage.slice(0, 300) }, 429, allowedOrigin);
+    return json({ error: hasPrimaryKey && hasBackupKey ? "Las dos cuentas de Gemini agotaron su cuota. " + lastQuotaMessage.slice(0, 300) : "No está configurada la clave secundaria GEMINI_API_KEY_2 en Producción." }, 429, allowedOrigin);
 
   }
 };

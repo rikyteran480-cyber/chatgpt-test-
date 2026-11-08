@@ -5,6 +5,40 @@ import { generateDocumentary } from './gemini';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
+function buildScenesFromScript(script: { hook: string; development: string; closing: string }, format: '9:16' | '16:9'): Scene[] {
+  const sections = [
+    { label: 'Gancho', text: script.hook ?? '' },
+    { label: 'Desarrollo', text: script.development ?? '' },
+    { label: 'Cierre', text: script.closing ?? '' },
+  ];
+  const chunks: { section: string; text: string }[] = [];
+  for (const part of sections) {
+    const sentences = part.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
+    let buffer = '';
+    for (const sentence of sentences.map((value) => value.trim()).filter(Boolean)) {
+      buffer = buffer ? buffer + ' ' + sentence : sentence;
+      if (buffer.split(/\\s+/).length >= 22) {
+        chunks.push({ section: part.label, text: buffer });
+        buffer = '';
+      }
+    }
+    if (buffer) chunks.push({ section: part.label, text: buffer });
+  }
+  return chunks.map((chunk) => {
+    const words = chunk.text.split(/\\s+/).length;
+    const duration = Math.max(3, Math.min(8, Math.round(words / 2.35)));
+    return {
+      id: crypto.randomUUID(),
+      narration: chunk.text,
+      visualDescription: chunk.section + ': reconstrucción histórica fotorrealista del momento narrado; respetar época, vestuario, arquitectura, geografía y materiales documentados.',
+      imageType: 'Reconstrucción IA fotorrealista',
+      prompt: 'Fotografía hiperrealista cinematográfica para documental histórico. Representar visualmente: ' + chunk.text + ' Contexto histórico riguroso, época y materiales auténticos, iluminación natural, composición documental, formato ' + format + '. No incluir texto, letras, marcas de agua ni elementos modernos.',
+      duration,
+    };
+  });
+}
+
+
 type Scene = {
   id: string;
   narration: string;
@@ -262,7 +296,10 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
         format: selected.format,
         previousWorks
       });
-      const scenes: Scene[] = (result.scenes ?? []).map((scene) => ({
+      const generatedScenes = Array.isArray(result.scenes) && result.scenes.length > 0
+        ? result.scenes
+        : buildScenesFromScript({ hook: result.hook, development: result.development, closing: result.closing }, selected.format);
+      const scenes: Scene[] = generatedScenes.map((scene) => ({
         id: crypto.randomUUID(),
         narration: scene.narration,
         visualDescription: scene.visualDescription,
@@ -350,7 +387,7 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
             <section className="scene-planner">
               <div className="scene-planner-heading">
                 <div><div className="eyebrow">PLANIFICACIÓN VISUAL</div><h2>Generador de escenas</h2><p>Divide la narración en fragmentos y prepara la descripción visual y el prompt de cada toma.</p></div>
-                <button type="button" className="primary-button" onClick={generateScenes}><WandSparkles size={16}/> {selected.scenes?.length ? 'Regenerar escenas' : 'Generar escenas desde el guion'}</button>
+                <button type="button" className="primary-button" onClick={generateScenes}><WandSparkles size={16}/> {selected.scenes?.length ? 'Regenerar escenas (opcional)' : 'Generar escenas desde el guion'}</button>
               </div>
               <div className="scene-policy">Estilo: fotografía hiperrealista cinematográfica · Formato {selected.format}. Las reconstrucciones generadas se identifican por separado del material histórico auténtico.</div>
               {!(selected.scenes?.length) ? <div className="scene-empty"><Images size={25}/><b>Todavía no hay escenas</b><span>Escribe primero el guion y pulsa «Generar escenas». También puedes añadir una escena manualmente.</span><button className="secondary-button" onClick={addScene}>Añadir escena vacía</button></div> : <>

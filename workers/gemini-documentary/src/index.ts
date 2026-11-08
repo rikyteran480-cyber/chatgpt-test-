@@ -90,7 +90,7 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
         headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
         body: JSON.stringify({
           model,
-          input: SYSTEM_INSTRUCTION + "\\n\\n" + userPrompt,
+          input: SYSTEM_INSTRUCTION + "\n\n" + userPrompt,
           tools: [{ type: "google_search" }]
         })
       });

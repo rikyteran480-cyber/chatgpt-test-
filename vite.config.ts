@@ -2,6 +2,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS === 'true' ? '/-rikytech-ai-studio./' : '/',
+  base: process.env.GITHUB_ACTIONS === 'true' ? '/chatgpt-test-/' : '/',
   plugins: [react()],
 });

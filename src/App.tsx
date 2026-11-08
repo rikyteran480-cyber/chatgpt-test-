@@ -305,6 +305,20 @@ export default function App() {
             <div className="section-heading"><div><div className="eyebrow">PRODUCCIÓN</div><h2>Construye tu documental</h2></div><span className="phase-tag">FASE 1</span></div>
             <div className="stage-grid">{stages.map((stage, index) => <article className="stage-card" key={stage.title}><div className="stage-top"><span className="stage-icon"><stage.icon size={20}/></span><span className="stage-number">0{index + 1}</span></div><h3>{stage.title}</h3><p>{stage.detail}</p><span className="stage-status">{stage.status}</span></article>)}</div>
 
+            <section className="ai-generator-panel">
+              <div className="ai-generator-copy">
+                <div className="eyebrow">INVESTIGACIÓN Y REDACCIÓN CON IA</div>
+                <h2>Crear documental con Gemini</h2>
+                <p>Investiga el tema, prepara un guion documental y organiza las escenas con fuentes para su verificación.</p>
+              </div>
+              <button type="button" className="primary-button" onClick={generateWithAI} disabled={aiLoading}>
+                <WandSparkles size={17}/> {aiLoading ? 'Gemini está investigando y escribiendo…' : 'Generar documental con Gemini'}
+              </button>
+              {aiLoading && <p className="ai-generator-status">Esto puede tardar unos segundos. No cierres esta pantalla.</p>}
+              {aiError && <p className="ai-generator-error" role="alert">{aiError}</p>}
+              {selected.editorialAngle && <div className="ai-editorial-result"><b>Enfoque editorial:</b> {selected.editorialAngle}{selected.editorialNote && <p>{selected.editorialNote}</p>}</div>}
+              {!!selected.sources?.length && <div className="ai-sources"><b>Fuentes para verificar</b><ul>{selected.sources.map((source, index) => <li key={index}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a> — {source.relevance}</li>)}</ul></div>}
+            </section>
             <section className="scene-planner">
               <div className="scene-planner-heading">
                 <div><div className="eyebrow">PLANIFICACIÓN VISUAL</div><h2>Generador de escenas</h2><p>Divide la narración en fragmentos y prepara la descripción visual y el prompt de cada toma.</p></div>

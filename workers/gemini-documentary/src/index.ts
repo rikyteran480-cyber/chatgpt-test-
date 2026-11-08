@@ -33,6 +33,38 @@ REGLAS EDITORIALES OBLIGATORIAS:
 Devuelve únicamente un objeto JSON válido con todos los campos solicitados: editorialAngle, editorialNote, noveltyCheck, hook, development, closing, estimatedSeconds, factsToVerify, sources y scenes. No incluyas Markdown ni texto fuera del JSON.
 `;
 
+function buildScenesFromScript(result: any, format: string): any[] {
+  const sections = [
+    { label: "Gancho", text: String(result.hook ?? "") },
+    { label: "Desarrollo", text: String(result.development ?? "") },
+    { label: "Cierre", text: String(result.closing ?? "") }
+  ];
+  const chunks: Array<{ label: string; text: string }> = [];
+  for (const section of sections) {
+    const sentences = section.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
+    let buffer = "";
+    for (const sentence of sentences.map((value: string) => value.trim()).filter(Boolean)) {
+      buffer = buffer ? buffer + " " + sentence : sentence;
+      if (buffer.split(/\\s+/).length >= 22) {
+        chunks.push({ label: section.label, text: buffer });
+        buffer = "";
+      }
+    }
+    if (buffer) chunks.push({ label: section.label, text: buffer });
+  }
+  return chunks.map((chunk, index) => {
+    const words = chunk.text.split(/\\s+/).length;
+    const duration = Math.max(3, Math.min(8, Math.round(words / 2.35)));
+    return {
+      narration: chunk.text,
+      visualDescription: chunk.label + ": reconstrucción histórica fotorrealista del momento narrado; respetar época, vestuario, arquitectura, geografía y materiales documentados.",
+      imageType: "Reconstrucción IA fotorrealista",
+      prompt: "Fotografía hiperrealista cinematográfica para documental histórico. Representar visualmente: " + chunk.text + " Contexto histórico riguroso, época y materiales auténticos, iluminación natural, composición documental, formato " + format + ". No incluir texto, letras, marcas de agua ni elementos modernos.",
+      duration
+    };
+  });
+}
+
 function extractJsonObject(raw: string): any {
   const text = raw.replace(/﻿/g, "").trim();
   const start = text.indexOf("{");
@@ -177,6 +209,7 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
           result.editorialNote = [result.editorialNote, "Proveedor alternativo OpenRouter: este borrador no tuvo búsqueda web en tiempo real. Verifica las fuentes y afirmaciones antes de publicar."].filter(Boolean).join(" ");
           result.sources = Array.isArray(result.sources) ? result.sources : [];
           result.factsToVerify = Array.isArray(result.factsToVerify) ? result.factsToVerify : [];
+          if (!Array.isArray(result.scenes) || result.scenes.length === 0) result.scenes = buildScenesFromScript(result, format);
           return json(result, 200, allowedOrigin);
         } catch {
           return json({ error: "OpenRouter generó texto, pero no se pudo interpretar como documental estructurado. Inténtalo otra vez." }, 502, allowedOrigin);

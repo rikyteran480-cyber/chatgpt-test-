@@ -84,7 +84,7 @@ Incluye fuentes con URL que respalden las afirmaciones centrales. Devuelve un gu
 `;
 
     try {
-      const model = env.GEMINI_MODEL || "gemini-3.8-flash";
+      const model = "gemini-3.8-flash";
       const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },

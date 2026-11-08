@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Clapperboard, FileText, Images, Film, Settings, Plus, Smartphone, ExternalLink, Menu, X, Search, FolderOpen, Trash2, Pencil, ArrowLeft, Clock3, Play, Save, Upload, Image as ImageIcon, XCircle, WandSparkles } from 'lucide-react';
 import { deleteSceneImage, getSceneImage, saveSceneImage } from './imageStore';
+import { generateDocumentary } from './gemini';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
@@ -25,6 +26,9 @@ type Project = {
   visualStyle: typeof DEFAULT_VISUAL_STYLE;
   scenes?: Scene[];
   script: { hook: string; development: string; closing: string };
+  editorialAngle?: string;
+  editorialNote?: string;
+  sources?: Array<{ title: string; url: string; relevance: string }>;
 };
 
 const STORAGE_KEY = 'rikytech-ai-studio.projects.v1';
@@ -62,6 +66,8 @@ export default function App() {
   const [duration, setDuration] = useState<60 | 80 | 100>(80);
   const [sceneImageUrls, setSceneImageUrls] = useState<Record<string, string>>({});
   const [sceneImageErrors, setSceneImageErrors] = useState<Record<string, string>>({});
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(projects)); } catch { /* Storage may be disabled or full. */ }
@@ -214,6 +220,49 @@ export default function App() {
       prompt: 'Fotografía hiperrealista cinematográfica, reconstrucción histórica rigurosa, iluminación natural, materiales y vestuario auténticos, formato ' + selected.format + '.'
     };
     updateScenes([...(selected.scenes ?? []), scene]);
+  }
+
+  async function generateWithAI() {
+    if (!selected || aiLoading) return;
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const previousWorks = projects.filter((project) => project.id !== selected.id).map((project) => ({
+        title: project.name,
+        angle: project.editorialAngle ?? '',
+        summary: project.description || [project.script?.hook, project.script?.development, project.script?.closing].filter(Boolean).join(' ').slice(0, 500)
+      }));
+      const result = await generateDocumentary({
+        topic: selected.name + (selected.description ? ': ' + selected.description : ''),
+        duration: selected.duration ?? 80,
+        format: selected.format,
+        previousWorks
+      });
+      const scenes: Scene[] = (result.scenes ?? []).map((scene) => ({
+        id: crypto.randomUUID(),
+        narration: scene.narration,
+        visualDescription: scene.visualDescription,
+        imageType: scene.imageType === 'Archivo o fotografía auténtica' ? 'Archivo o fotografía auténtica' : 'Reconstrucción IA fotorrealista',
+        prompt: scene.prompt,
+        duration: Math.max(1, Number(scene.duration) || 5)
+      }));
+      const updated: Project = {
+        ...selected,
+        script: { hook: result.hook, development: result.development, closing: result.closing },
+        scenes,
+        editorialAngle: result.editorialAngle,
+        editorialNote: result.editorialNote,
+        sources: result.sources ?? [],
+        status: 'En desarrollo',
+        updatedAt: new Date().toISOString()
+      };
+      setSelected(updated);
+      setProjects((items) => items.map((item) => item.id === selected.id ? updated : item));
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'No se pudo generar el documental.');
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   function updateDuration(value: string) {

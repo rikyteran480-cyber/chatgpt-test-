@@ -215,8 +215,7 @@ export default function App() {
     let imported = 0;
     for (let i = 0; i < count; i += 1) {
       try {
-        await importSceneImage(targets[i].id, orderedFiles[i]);
-        imported += 1;
+        if (await importSceneImage(targets[i].id, orderedFiles[i])) imported += 1;
       } catch { /* importSceneImage reports per-image errors */ }
     }
     const extra = orderedFiles.length > targets.length ? ' Sobran ' + (orderedFiles.length - targets.length) + ' archivo(s).' : '';
@@ -224,15 +223,15 @@ export default function App() {
     setFlowImportStatus(imported + ' de ' + count + ' imágenes importadas y asignadas en orden de nombre a las escenas.' + extra + missing);
   }
 
-  async function importSceneImage(sceneId: string, file: File | null) {
-    if (!file) return;
+  async function importSceneImage(sceneId: string, file: File | null): Promise<boolean> {
+    if (!file) return false;
     if (!file.type.startsWith('image/')) {
       setSceneImageErrors((items) => ({ ...items, [sceneId]: 'Selecciona un archivo de imagen.' }));
-      return;
+      return false;
     }
     if (file.size > 20 * 1024 * 1024) {
       setSceneImageErrors((items) => ({ ...items, [sceneId]: 'La imagen supera el límite de 20 MB.' }));
-      return;
+      return false;
     }
     try {
       await saveSceneImage(sceneId, file);
@@ -241,8 +240,10 @@ export default function App() {
         return { ...items, [sceneId]: URL.createObjectURL(file) };
       });
       setSceneImageErrors((items) => { const next = { ...items }; delete next[sceneId]; return next; });
+      return true;
     } catch {
       setSceneImageErrors((items) => ({ ...items, [sceneId]: 'No se pudo guardar la imagen en este dispositivo. Comprueba el espacio disponible.' }));
+      return false;
     }
   }
 

@@ -188,14 +188,13 @@ export default function App() {
           ''];
       })
     ].join('\\n');
-    const flowTab = window.open('https://labs.google/fx/tools/flow', '_blank', 'noopener,noreferrer');
+    window.open('https://labs.google/fx/tools/flow', '_blank', 'noopener,noreferrer');
     try {
       await navigator.clipboard.writeText(batch);
       setFlowBatchStatus(scenes.length + ' prompts copiados. En Flow, genera cada escena por separado y luego vuelve aquí para importar las imágenes en sus tarjetas.');
     } catch {
       setFlowBatchStatus('Flow se abrió, pero no se pudo copiar el lote. Usa «Copiar prompt» en cada escena.');
     }
-    if (!flowTab) setFlowBatchStatus((current) => current + ' Si Flow no se abrió, permite las ventanas emergentes del navegador.');
   }
 
   async function importSceneImage(sceneId: string, file: File | null) {

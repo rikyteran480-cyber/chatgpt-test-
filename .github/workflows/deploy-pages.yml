@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/gemini-original-documentary-engine
   workflow_dispatch:
 
 permissions:
@@ -34,6 +35,8 @@ jobs:
         run: npm run typecheck
 
       - name: Build
+        env:
+          VITE_GEMINI_API_URL: https://rikytech-gemini-documentary.rikyteran480.workers.dev
         run: npm run build
 
       - name: Configure Pages

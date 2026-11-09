@@ -145,7 +145,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
     if (recording) return;
 
     const mp4Types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'];
-    const webmTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    const webmTypes = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
     // Android MediaRecorder can produce a truncated MP4 despite a full recording loop.
     // Prefer WebM, whose timestamps are more reliable in Chrome on Android.
     const mimeType = webmTypes.find((type) => MediaRecorder.isTypeSupported(type))
@@ -200,35 +200,43 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         void audioContext.close();
       };
       recorder.onstop = () => {
-        const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const blob = new Blob(chunks, { type: mimeType });
+        const actualMime = recorder.mimeType || mimeType;
+        const extension = actualMime.includes('mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, { type: actualMime });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = url; link.download = 'rikytech-documental.' + extension;
-        // Check actual media duration before offering a potentially broken download.
+        link.href = url;
+        link.download = 'rikytech-documental.' + extension;
+
+        // Let the browser inspect the finalized Blob before releasing the recording tracks.
         const probe = document.createElement('video');
         probe.preload = 'metadata';
         probe.muted = true;
-        probe.onloadedmetadata = () => {
-          const actual = probe.duration;
-          if (Number.isFinite(actual) && actual < totalSeconds * 0.8) {
-            setProgress('Exportación incompleta: el archivo solo contiene ' + actual.toFixed(1) + ' de ' + totalSeconds + ' segundos. No se descargó un vídeo defectuoso.');
+        let settled = false;
+        const finish = (validDuration?: number) => {
+          if (settled) return;
+          settled = true;
+          if (validDuration !== undefined && validDuration < totalSeconds * 0.8) {
+            setProgress('Exportación incompleta: el archivo contiene ' + validDuration.toFixed(1) + ' de ' + totalSeconds + ' segundos. No se descargó.');
+            URL.revokeObjectURL(url);
           } else {
             link.click();
-            setProgress('Montaje exportado en ' + extension.toUpperCase() + '. Comprueba el archivo antes de publicarlo.');
+            setProgress(validDuration === undefined
+              ? 'El navegador no pudo leer la duración, pero se descargó el archivo para comprobar su reproducción.'
+              : 'Montaje exportado en ' + extension.toUpperCase() + ' · ' + validDuration.toFixed(1) + ' segundos.');
+            window.setTimeout(() => URL.revokeObjectURL(url), 30000);
           }
-          window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+          stream.getTracks().forEach((track) => track.stop());
+          audioElements.forEach((audio) => { audio.pause(); audio.src = ''; });
+          void audioContext.close();
+          recorderRef.current = null;
+          setRecording(false);
         };
-        probe.onerror = () => {
-          setProgress('No se pudo verificar el vídeo generado; se evitó descargar un archivo posiblemente incompleto.');
-          URL.revokeObjectURL(url);
-        };
+        probe.onloadedmetadata = () => finish(Number.isFinite(probe.duration) ? probe.duration : undefined);
+        probe.onerror = () => finish(undefined);
         probe.src = url;
-        stream.getTracks().forEach((track) => track.stop());
-        audioElements.forEach((audio) => { audio.pause(); audio.src = ''; });
-        void audioContext.close();
-        recorderRef.current = null;
-        setRecording(false);
+        probe.load();
+        window.setTimeout(() => finish(undefined), 4000);
       };
 
       recorder.start();

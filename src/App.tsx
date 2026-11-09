@@ -4,6 +4,7 @@ import { deleteSceneImage, getSceneImage, saveSceneImage } from './imageStore';
 import { generateDocumentary } from './gemini';
 import { generateSceneImage } from './imageGeneration';
 import { matchSceneImageFiles } from './sceneAssetMatching';
+import VideoEditor from './VideoEditor';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
@@ -588,6 +589,7 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
               </>}
               <button className="secondary-button add-scene-button" onClick={addScene}><Plus size={15}/> Añadir escena manualmente</button>
             </section>
+            {!!selected.scenes?.length && <VideoEditor scenes={selected.scenes} imageUrls={sceneImageUrls} format={selected.format} />}
             <section className="script-editor">
               <div className="script-editor-heading"><div><div className="eyebrow">TALLER DE NARRACIÓN</div><h2>Editor de guion</h2><p>Escribe la narración por partes. Los cambios se guardan automáticamente.</p></div><label className="duration-control" htmlFor="script-duration">Duración objetivo<select id="script-duration" value={selected.duration ?? 80} onChange={(e) => updateDuration(e.target.value)}><option value="60">60 segundos</option><option value="80">80 segundos</option><option value="100">100 segundos</option></select></label></div>
               <div className="script-metrics"><div><b>{scriptWords}</b><span>PALABRAS</span></div><div><b>~{estimatedSeconds}s</b><span>DURACIÓN ESTIMADA</span></div><div><b>{selected.duration ?? 80}s</b><span>OBJETIVO</span></div></div>

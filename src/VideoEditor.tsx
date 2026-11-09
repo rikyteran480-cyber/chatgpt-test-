@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Film, Music2, Play, Square, Volume2, Sparkles } from 'lucide-react';
+import { Download, Film, Music2, Play, Square, Volume2 } from 'lucide-react';
 
 type EditorScene = { id: string; narration: string; duration: number };
 type Props = { scenes: EditorScene[]; imageUrls: Record<string, string>; format: '9:16' | '16:9' };
@@ -18,6 +18,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
   const [previewIndex, setPreviewIndex] = useState(0);
   const rafRef = useRef<number | null>(null);
   const stopRef = useRef(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
 
   const totalSeconds = scenes.reduce((sum, scene) => sum + Math.max(1, Number(scene.duration) || 1), 0);
   const width = format === '9:16' ? 720 : 1280;
@@ -175,6 +176,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
       const stream = canvas.captureStream(30);
       destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
       const recorder = new MediaRecorder(stream, { mimeType });
+      recorderRef.current = recorder;
       const chunks: BlobPart[] = [];
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       recorder.onerror = () => {
@@ -193,6 +195,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         stream.getTracks().forEach((track) => track.stop());
         audioElements.forEach((audio) => { audio.pause(); audio.src = ''; });
         void audioContext.close();
+        recorderRef.current = null;
         setRecording(false);
         setProgress('Montaje exportado en ' + extension.toUpperCase() + '. Comprueba el archivo antes de publicarlo.');
       };
@@ -248,6 +251,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
   function stopExport() {
     stopRef.current = true;
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
   }
 
   return <section className="video-editor">

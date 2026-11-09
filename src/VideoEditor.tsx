@@ -185,9 +185,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         });
       }));
 
-      const stream = canvas.captureStream(0);
-      const videoTrack = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
-      videoTrack?.requestFrame?.();
+      const stream = canvas.captureStream(30);
       destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
       const recorder = new MediaRecorder(stream, { mimeType });
       recorderRef.current = recorder;
@@ -231,10 +229,11 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         const elapsed = performance.now() - started;
         if (stopRef.current || elapsed >= totalMs) {
           drawFrame(scenes.length - 1, totalMs, Math.max(0, Number(scenes[scenes.length - 1].duration) || 1));
-          videoTrack?.requestFrame?.();
           if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
           intervalRef.current = null;
-          recorder.stop();
+          window.setTimeout(() => {
+            if (recorder.state !== 'inactive') recorder.stop();
+          }, 180);
           audioElements.forEach((audio) => audio.pause());
           return;
         }
@@ -251,7 +250,6 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         const oldIndex = isTransition ? index - 1 : -1;
         if (index !== previousIndex) { previousIndex = index; setPreviewIndex(index); }
         drawFrame(index, elapsed, sceneElapsed, alpha, oldIndex);
-        videoTrack?.requestFrame?.();
         if (performance.now() - lastProgressUpdate > 450) {
           lastProgressUpdate = performance.now();
           setProgress('Exportando escena ' + (index + 1) + ' de ' + scenes.length + ' · ' + Math.min(100, Math.round(elapsed / totalMs * 100)) + '%');

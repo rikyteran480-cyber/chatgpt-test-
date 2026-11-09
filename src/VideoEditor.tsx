@@ -19,6 +19,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
   const rafRef = useRef<number | null>(null);
   const stopRef = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const intervalRef = useRef<number | null>(null);
 
   const totalSeconds = scenes.reduce((sum, scene) => sum + Math.max(1, Number(scene.duration) || 1), 0);
   const width = format === '9:16' ? 720 : 1280;
@@ -39,6 +40,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
 
   useEffect(() => () => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
     if (voiceUrl) URL.revokeObjectURL(voiceUrl);
     if (musicUrl) URL.revokeObjectURL(musicUrl);
   }, [voiceUrl, musicUrl]);
@@ -149,7 +151,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
     if (!mimeType) { setProgress('Este navegador no ofrece un formato de grabación compatible.'); return; }
 
     setRecording(true);
-    setProgress('Preparando montaje…');
+    setProgress('Preparando ' + scenes.length + ' escenas · ' + totalSeconds + ' segundos…');
     stopRef.current = false;
     const audioContext = new AudioContext();
     const destination = audioContext.createMediaStreamDestination();
@@ -173,7 +175,19 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
       addAudio(musicUrl, musicVolume, true);
       await audioContext.resume();
 
-      const stream = canvas.captureStream(30);
+      await Promise.all(scenes.map((scene) => {
+        const image = imageCache.current.get(scene.id);
+        if (!image || image.complete) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          const finish = () => resolve();
+          image.addEventListener('load', finish, { once: true });
+          image.addEventListener('error', finish, { once: true });
+        });
+      }));
+
+      const stream = canvas.captureStream(0);
+      const videoTrack = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
+      videoTrack?.requestFrame?.();
       destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
       const recorder = new MediaRecorder(stream, { mimeType });
       recorderRef.current = recorder;
@@ -209,13 +223,17 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         }
       }
 
-      const started = performance.now();
       const totalMs = Math.max(1000, totalSeconds * 1000);
+      const started = performance.now();
       let previousIndex = -1;
       let lastProgressUpdate = 0;
-      const render = (now: number) => {
-        const elapsed = now - started;
+      const render = () => {
+        const elapsed = performance.now() - started;
         if (stopRef.current || elapsed >= totalMs) {
+          drawFrame(scenes.length - 1, totalMs, Math.max(0, Number(scenes[scenes.length - 1].duration) || 1));
+          videoTrack?.requestFrame?.();
+          if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
+          intervalRef.current = null;
           recorder.stop();
           audioElements.forEach((audio) => audio.pause());
           return;
@@ -233,11 +251,14 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         const oldIndex = isTransition ? index - 1 : -1;
         if (index !== previousIndex) { previousIndex = index; setPreviewIndex(index); }
         drawFrame(index, elapsed, sceneElapsed, alpha, oldIndex);
-        if (now - lastProgressUpdate > 450) {
-          lastProgressUpdate = now;
+        videoTrack?.requestFrame?.();
+        if (performance.now() - lastProgressUpdate > 450) {
+          lastProgressUpdate = performance.now();
           setProgress('Exportando escena ' + (index + 1) + ' de ' + scenes.length + ' · ' + Math.min(100, Math.round(elapsed / totalMs * 100)) + '%');
         }
-        rafRef.current = requestAnimationFrame(render);
+      };
+      render();
+      intervalRef.current = window.setInterval(render, 1000 / 30);
       };
       rafRef.current = requestAnimationFrame(render);
     } catch (error) {
@@ -251,6 +272,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
   function stopExport() {
     stopRef.current = true;
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    if (intervalRef.current !== null) { window.clearInterval(intervalRef.current); intervalRef.current = null; }
     if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
   }
 

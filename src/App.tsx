@@ -102,6 +102,7 @@ export default function App() {
   const [duration, setDuration] = useState<60 | 80 | 100>(80);
   const [sceneImageUrls, setSceneImageUrls] = useState<Record<string, string>>({});
   const [sceneImageErrors, setSceneImageErrors] = useState<Record<string, string>>({});
+  const [sceneImageStatuses, setSceneImageStatuses] = useState<Record<string, 'pending' | 'processing' | 'completed' | 'error'>>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [manualPromptCopied, setManualPromptCopied] = useState(false);
@@ -128,6 +129,7 @@ export default function App() {
       }));
       if (cancelled) { Object.values(urls).forEach(URL.revokeObjectURL); return; }
       setSceneImageUrls(urls);
+      setSceneImageStatuses((current) => ({ ...current, ...Object.fromEntries(Object.keys(urls).map((id) => [id, 'completed' as const])) }));
     }
     void restoreImages();
     return () => { cancelled = true; Object.values(urls).forEach(URL.revokeObjectURL); };
@@ -219,6 +221,37 @@ export default function App() {
     }
   }
 
+  function retryFlowScene(scene: Scene) {
+    setSceneImageErrors((items) => { const next = { ...items }; delete next[scene.id]; return next; });
+    setSceneImageStatuses((items) => ({ ...items, [scene.id]: 'pending' }));
+    openFlowForScene(scene);
+    setFlowBatchStatus('Escena preparada para reintento. El prompt quedó copiado; genera la imagen en Flow y vuelve a importarla en esta tarjeta.');
+  }
+
+  function downloadSceneManifest() {
+    if (!selected) return;
+    const manifest = {
+      project: selected.name,
+      format: selected.format,
+      createdAt: new Date().toISOString(),
+      scenes: (selected.scenes ?? []).map((scene, index) => ({
+        scene: index + 1,
+        id: scene.id,
+        imageType: scene.imageType,
+        status: sceneImageUrls[scene.id] ? 'completed' : (sceneImageStatuses[scene.id] ?? (sceneImageErrors[scene.id] ? 'error' : 'pending')),
+        fileName: sceneImageUrls[scene.id] ? 'escena-' + String(index + 1).padStart(2, '0') : null,
+        prompt: scene.prompt,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'rikytech-manifiesto-escenas.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function importFlowBatchImages(files: FileList | null) {
     if (!selected || !files?.length) return;
     const allScenes = selected.scenes ?? [];
@@ -239,6 +272,7 @@ export default function App() {
     }
     let imported = 0;
     for (const assignment of assignments) {
+      setSceneImageStatuses((items) => ({ ...items, [assignment.scene.id]: 'processing' }));
       try {
         if (await importSceneImage(assignment.scene.id, assignment.file)) imported += 1;
       } catch { /* importSceneImage reports per-image errors */ }
@@ -265,10 +299,12 @@ export default function App() {
     }
     setImageBatchRunning(true);
     setImageBatchStatus('Preparando generación secuencial…');
+    targets.forEach((scene) => setSceneImageStatuses((items) => ({ ...items, [scene.id]: 'pending' })));
     let completed = 0;
     try {
       for (let index = 0; index < targets.length; index += 1) {
         const scene = targets[index];
+        setSceneImageStatuses((items) => ({ ...items, [scene.id]: 'processing' }));
         setImageBatchStatus('Generando escena ' + (index + 1) + ' de ' + targets.length + '…');
         try {
           const blob = await generateSceneImage({ prompt: scene.prompt, format: selected.format, sceneId: scene.id });
@@ -277,6 +313,7 @@ export default function App() {
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Error desconocido';
           setSceneImageErrors((items) => ({ ...items, [scene.id]: message }));
+          setSceneImageStatuses((items) => ({ ...items, [scene.id]: 'error' }));
           setImageBatchStatus('Se detuvo en la escena ' + (index + 1) + '. ' + message + ' Las imágenes anteriores ya quedaron guardadas.');
           return;
         }
@@ -297,6 +334,7 @@ export default function App() {
       setSceneImageErrors((items) => ({ ...items, [sceneId]: 'La imagen supera el límite de 20 MB.' }));
       return false;
     }
+    setSceneImageStatuses((items) => ({ ...items, [sceneId]: 'processing' }));
     try {
       await saveSceneImage(sceneId, file);
       setSceneImageUrls((items) => {
@@ -304,9 +342,11 @@ export default function App() {
         return { ...items, [sceneId]: URL.createObjectURL(file) };
       });
       setSceneImageErrors((items) => { const next = { ...items }; delete next[sceneId]; return next; });
+      setSceneImageStatuses((items) => ({ ...items, [sceneId]: 'completed' }));
       return true;
     } catch {
       setSceneImageErrors((items) => ({ ...items, [sceneId]: 'No se pudo guardar la imagen en este dispositivo. Comprueba el espacio disponible.' }));
+      setSceneImageStatuses((items) => ({ ...items, [sceneId]: 'error' }));
       return false;
     }
   }
@@ -513,6 +553,7 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
                 <button type="button" className="primary-button" onClick={generateScenes}><WandSparkles size={16}/> {selected.scenes?.length ? 'Regenerar escenas (opcional)' : 'Generar escenas desde el guion'}</button>
               </div>
               <div className="scene-policy">Estilo: fotografía hiperrealista cinematográfica · Formato {selected.format}. Las reconstrucciones generadas se identifican por separado del material histórico auténtico.</div>
+              <div className="scene-queue-toolbar"><span>{(selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista' && (sceneImageStatuses[scene.id] === 'completed' || !!sceneImageUrls[scene.id])).length} completadas · {(selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista' && !sceneImageUrls[scene.id] && sceneImageStatuses[scene.id] !== 'error').length} pendientes · {(selected.scenes ?? []).filter((scene) => sceneImageStatuses[scene.id] === 'error').length} con error</span><button type="button" className="secondary-button" onClick={downloadSceneManifest}>Descargar manifiesto de escenas</button></div>
               {!!selected.scenes?.some((scene) => scene.imageType === 'Reconstrucción IA fotorrealista') && <div className="flow-batch-panel">
                 <div><div className="eyebrow">GOOGLE FLOW · MODO GRATUITO</div><b>Generar imágenes escena por escena</b><p>Google Flow permite generar imágenes desde su cuadro estándar sin descontar créditos mensuales, sujeto a límites diarios. Para evitar usar créditos, no actives Agent ni generación de vídeo. RikyTech puede preparar cada prompt y después asignar las imágenes que descargues.</p></div>
                 <button type="button" className="primary-button" onClick={() => void copyNextFlowPrompt()}><ExternalLink size={16}/> Copiar siguiente prompt y abrir Flow</button>
@@ -527,7 +568,7 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
               {!(selected.scenes?.length) ? <div className="scene-empty"><Images size={25}/><b>Todavía no hay escenas</b><span>Escribe primero el guion y pulsa «Generar escenas». También puedes añadir una escena manualmente.</span><button className="secondary-button" onClick={addScene}>Añadir escena vacía</button></div> : <>
                 <div className="scene-summary"><b>{selected.scenes.length} escenas</b><span>{selected.scenes.reduce((sum, scene) => sum + scene.duration, 0)} segundos estimados</span></div>
                 <div className="scene-list">{selected.scenes.map((scene, index) => <article className="scene-card" key={scene.id}>
-                  <div className="scene-card-top"><div><span className="scene-index">ESCENA {String(index + 1).padStart(2, '0')}</span><span className="scene-kind">{scene.imageType}</span></div><button className="scene-remove" onClick={() => removeScene(scene.id)} aria-label={'Eliminar escena ' + (index + 1)}><Trash2 size={16}/></button></div>
+                  <div className="scene-card-top"><div><span className="scene-index">ESCENA {String(index + 1).padStart(2, '0')}</span><span className="scene-kind">{scene.imageType}</span><span className="scene-kind">Estado: {sceneImageUrls[scene.id] ? 'Completada' : sceneImageStatuses[scene.id] === 'processing' ? 'En proceso' : sceneImageStatuses[scene.id] === 'error' ? 'Error' : 'Pendiente'}</span></div><button className="scene-remove" onClick={() => removeScene(scene.id)} aria-label={'Eliminar escena ' + (index + 1)}><Trash2 size={16}/></button></div>
                   <label className="scene-field">Narración<textarea rows={3} value={scene.narration} onChange={(e) => updateScene(scene.id, 'narration', e.target.value)} placeholder="Fragmento del guion asociado a esta escena"/></label>
                   <label className="scene-field">Tipo de imagen<select value={scene.imageType} onChange={(e) => updateScene(scene.id, 'imageType', e.target.value)}><option>Reconstrucción IA fotorrealista</option><option>Archivo o fotografía auténtica</option></select></label>
                   <label className="scene-field">Descripción visual<textarea rows={3} value={scene.visualDescription} onChange={(e) => updateScene(scene.id, 'visualDescription', e.target.value)}/></label>
@@ -540,6 +581,7 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
                     <input id={'scene-image-' + scene.id} className="scene-image-input" type="file" accept="image/*" onChange={(e) => { void importSceneImage(scene.id, e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}/>
                     {sceneImageUrls[scene.id] && <div className="scene-generated-preview"><img src={sceneImageUrls[scene.id]} alt={'Imagen importada para la escena ' + (index + 1)}/><span>Imagen guardada en este dispositivo</span><button type="button" className="remove-scene-image" onClick={() => void clearSceneImage(scene.id)}><XCircle size={14}/> Quitar imagen</button></div>}
                     {sceneImageErrors[scene.id] && <p className="scene-generation-error">{sceneImageErrors[scene.id]}</p>}
+                  {scene.imageType === 'Reconstrucción IA fotorrealista' && !sceneImageUrls[scene.id] && <button type="button" className="secondary-button" onClick={() => retryFlowScene(scene)}>{sceneImageStatuses[scene.id] === 'error' ? 'Reintentar esta escena en Flow' : 'Abrir Flow para esta escena'}</button>}
                   </div>
                   <div className="scene-card-footer"><span>{scene.imageType === 'Archivo o fotografía auténtica' ? 'Verificar procedencia y fecha de la fuente' : 'Recreación generada · No es fotografía de archivo'}</span><button className="copy-prompt" onClick={() => void navigator.clipboard?.writeText(scene.prompt)}>Copiar prompt</button></div>
                 </article>)}</div>

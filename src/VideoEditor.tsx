@@ -146,8 +146,10 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
 
     const mp4Types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'];
     const webmTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-    const mimeType = mp4Types.find((type) => MediaRecorder.isTypeSupported(type))
-      || webmTypes.find((type) => MediaRecorder.isTypeSupported(type));
+    // Android MediaRecorder can produce a truncated MP4 despite a full recording loop.
+    // Prefer WebM, whose timestamps are more reliable in Chrome on Android.
+    const mimeType = webmTypes.find((type) => MediaRecorder.isTypeSupported(type))
+      || mp4Types.find((type) => MediaRecorder.isTypeSupported(type));
     if (!mimeType) { setProgress('Este navegador no ofrece un formato de grabación compatible.'); return; }
 
     setRecording(true);
@@ -202,17 +204,34 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
         const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = url; link.download = 'rikytech-documental.' + extension; link.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+        link.href = url; link.download = 'rikytech-documental.' + extension;
+        // Check actual media duration before offering a potentially broken download.
+        const probe = document.createElement('video');
+        probe.preload = 'metadata';
+        probe.muted = true;
+        probe.onloadedmetadata = () => {
+          const actual = probe.duration;
+          if (Number.isFinite(actual) && actual < totalSeconds * 0.8) {
+            setProgress('Exportación incompleta: el archivo solo contiene ' + actual.toFixed(1) + ' de ' + totalSeconds + ' segundos. No se descargó un vídeo defectuoso.');
+          } else {
+            link.click();
+            setProgress('Montaje exportado en ' + extension.toUpperCase() + '. Comprueba el archivo antes de publicarlo.');
+          }
+          window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+        };
+        probe.onerror = () => {
+          setProgress('No se pudo verificar el vídeo generado; se evitó descargar un archivo posiblemente incompleto.');
+          URL.revokeObjectURL(url);
+        };
+        probe.src = url;
         stream.getTracks().forEach((track) => track.stop());
         audioElements.forEach((audio) => { audio.pause(); audio.src = ''; });
         void audioContext.close();
         recorderRef.current = null;
         setRecording(false);
-        setProgress('Montaje exportado en ' + extension.toUpperCase() + '. Comprueba el archivo antes de publicarlo.');
       };
 
-      recorder.start(250);
+      recorder.start();
       for (const audio of audioElements) {
         try { await audio.play(); } catch {
           setProgress('No se pudo iniciar uno de los audios. Revisa el archivo y vuelve a exportar.');

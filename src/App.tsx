@@ -3,6 +3,7 @@ import { Clapperboard, FileText, Images, Film, Settings, Plus, Smartphone, Exter
 import { deleteSceneImage, getSceneImage, saveSceneImage } from './imageStore';
 import { generateDocumentary } from './gemini';
 import { generateSceneImage } from './imageGeneration';
+import { matchSceneImageFiles } from './sceneAssetMatching';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
@@ -220,27 +221,37 @@ export default function App() {
 
   async function importFlowBatchImages(files: FileList | null) {
     if (!selected || !files?.length) return;
-    const targets = (selected.scenes ?? []).filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista');
-    const orderedFiles = Array.from(files).filter((file) => file.type.startsWith('image/'))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-    if (!orderedFiles.length) {
+    const allScenes = selected.scenes ?? [];
+    const targets = allScenes.filter((scene) => scene.imageType === 'Reconstrucción IA fotorrealista');
+    const imageFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
+    if (!imageFiles.length) {
       setFlowImportStatus('No se encontraron archivos de imagen válidos.');
       return;
     }
-    if (orderedFiles.some((file) => file.size > 20 * 1024 * 1024)) {
+    if (imageFiles.some((file) => file.size > 20 * 1024 * 1024)) {
       setFlowImportStatus('Hay imágenes que superan el límite de 20 MB. Reduce su tamaño e inténtalo de nuevo.');
       return;
     }
-    const count = Math.min(targets.length, orderedFiles.length);
+    const assignments = matchSceneImageFiles(imageFiles, allScenes);
+    if (!assignments.length) {
+      setFlowImportStatus('No se pudo relacionar ninguna imagen con una escena. Usa nombres como escena-01.png, escena-02.png.');
+      return;
+    }
     let imported = 0;
-    for (let i = 0; i < count; i += 1) {
+    for (const assignment of assignments) {
       try {
-        if (await importSceneImage(targets[i].id, orderedFiles[i])) imported += 1;
+        if (await importSceneImage(assignment.scene.id, assignment.file)) imported += 1;
       } catch { /* importSceneImage reports per-image errors */ }
     }
-    const extra = orderedFiles.length > targets.length ? ' Sobran ' + (orderedFiles.length - targets.length) + ' archivo(s).' : '';
-    const missing = orderedFiles.length < targets.length ? ' Faltan ' + (targets.length - orderedFiles.length) + ' imagen(es) para completar el lote.' : '';
-    setFlowImportStatus(imported + ' de ' + count + ' imágenes importadas y asignadas en orden de nombre a las escenas.' + extra + missing);
+    const assignedIds = new Set(assignments.map((item) => item.scene.id));
+    const missing = targets.filter((scene) => !assignedIds.has(scene.id)).length;
+    const unmatched = imageFiles.length - assignments.length;
+    const details = [
+      assignments.some((item) => item.matchType === 'scene-number') ? 'Se respetaron los números de escena indicados en los nombres.' : 'Se asignaron por orden numérico de archivo.',
+      missing ? 'Faltan ' + missing + ' imagen(es).' : 'Todas las escenas IA tienen imagen asignada.',
+      unmatched ? 'No se asignaron ' + unmatched + ' archivo(s) duplicados o sin escena válida.' : ''
+    ].filter(Boolean).join(' ');
+    setFlowImportStatus(imported + ' de ' + assignments.length + ' imágenes importadas. ' + details);
   }
 
   async function generateAllSceneImages() {

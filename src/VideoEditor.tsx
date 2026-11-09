@@ -259,8 +259,6 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
       };
       render();
       intervalRef.current = window.setInterval(render, 1000 / 30);
-      };
-      rafRef.current = requestAnimationFrame(render);
     } catch (error) {
       audioElements.forEach((audio) => { audio.pause(); audio.src = ''; });
       void audioContext.close();

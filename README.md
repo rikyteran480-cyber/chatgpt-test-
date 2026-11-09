@@ -18,6 +18,7 @@ Incluye creación, edición, búsqueda y eliminación de proyectos; formato vert
 - La generación se realiza en Flow, usando la cuenta y los límites diarios de Google del usuario. RikyTech no usa Picsart ni consume créditos de Picsart.
 - Después de generar y descargar una imagen desde Flow, vuelve a RikyTech, abre la escena correspondiente y pulsa **Importar imagen desde el teléfono**. Selecciona la imagen descargada; aparecerá en la escena y quedará guardada localmente.
 - También puedes importar fotografías auténticas. Cada escena admite una imagen, que puedes reemplazar o quitar. Límite de importación: 20 MB por imagen.
+- La importación por lote reconoce nombres como `escena-01.png`, `scene-02.jpg` o `shot_03.webp` y asigna cada archivo a su número real de escena, aunque existan escenas de archivo entre ellas. Los archivos sin número explícito se asignan por orden natural del nombre.
 - Las imágenes se almacenan en IndexedDB, separadas de los datos del proyecto, para evitar llenar el almacenamiento de texto de localStorage. Permanecen en el mismo navegador/dispositivo; todavía no se sincronizan con la nube.
 
 **Importante:** Flow permite crear imágenes desde su interfaz móvil, pero no hay una API pública oficial de Flow para que esta aplicación envíe prompts y reciba automáticamente las imágenes. Por eso la integración actual es un traspaso de prompt con un toque, no una automatización falsa ni una conexión no oficial.

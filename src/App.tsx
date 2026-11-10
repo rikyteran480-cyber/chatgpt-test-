@@ -41,7 +41,7 @@ function buildScenesFromScript(script: { hook: string; development: string; clos
     { label: 'Cierre', text: script.closing ?? '' },
   ];
   const chunks = sections.flatMap((part) =>
-    splitNarrationIntoBeats(part.text).map((text) => ({ section: part.label, text }))
+    splitNarrationIntoScenes(part.text).map((text) => ({ section: part.label, text }))
   );
   return chunks.map((chunk) => {
     const duration = sceneDurationForNarration(chunk.text);
@@ -391,7 +391,7 @@ export default function App() {
       { label: 'Cierre', text: selected.script?.closing ?? '' },
     ];
     const chunks = parts.flatMap((part) =>
-      splitNarrationIntoBeats(part.text).map((text) => ({ section: part.label, text }))
+      splitNarrationIntoScenes(part.text).map((text) => ({ section: part.label, text }))
     );
     const scenes: Scene[] = chunks.map((chunk) => {
       const duration = sceneDurationForNarration(chunk.text);

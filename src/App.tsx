@@ -480,14 +480,27 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
       const generatedScenes = Array.isArray(result.scenes) && result.scenes.length > 0
         ? result.scenes
         : buildScenesFromScript({ hook: result.hook, development: result.development, closing: result.closing }, selected.format);
-      const scenes: Scene[] = generatedScenes.map((scene) => ({
-        id: crypto.randomUUID(),
-        narration: scene.narration,
-        visualDescription: scene.visualDescription,
-        imageType: scene.imageType === 'Archivo o fotografía auténtica' ? 'Archivo o fotografía auténtica' : 'Reconstrucción IA fotorrealista',
-        prompt: scene.prompt,
-        duration: Math.max(1, Number(scene.duration) || 5)
-      }));
+      const scenes: Scene[] = generatedScenes.flatMap((scene) =>
+        splitNarrationIntoBeats(scene.narration).map((beat, beatIndex) => {
+          const cameraDirections = [
+            'plano general cinematográfico que sitúe el lugar y la época',
+            'plano medio que destaque la acción humana principal',
+            'primer plano de un objeto o detalle histórico relevante',
+            'plano lateral con profundidad y movimiento visual sugerido'
+          ];
+          const imageType = scene.imageType === 'Archivo o fotografía auténtica'
+            ? 'Archivo o fotografía auténtica'
+            : 'Reconstrucción IA fotorrealista';
+          return {
+            id: crypto.randomUUID(),
+            narration: beat,
+            visualDescription: scene.visualDescription + ' Encuadre: ' + cameraDirections[beatIndex % cameraDirections.length] + '.',
+            imageType,
+            prompt: scene.prompt + ' Enfoque narrativo exacto de este plano: ' + beat + '. Encuadre: ' + cameraDirections[beatIndex % cameraDirections.length] + '. Cada plano debe aportar una imagen distinta y coherente, sin repetir exactamente la composición anterior.',
+            duration: sceneDurationForNarration(beat)
+          };
+        })
+      );
       const updated: Project = {
         ...selected,
         script: { hook: result.hook, development: result.development, closing: result.closing },

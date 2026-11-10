@@ -8,43 +8,30 @@ import VideoEditor from './VideoEditor';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
-function splitNarrationIntoBeats(text: string, maxWords = 11): string[] {
-  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
-  const beats: string[] = [];
+function splitNarrationIntoScenes(text: string, targetWords = 24): string[] {
+  const sentences = (text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [])
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const scenes: string[] = [];
   let buffer: string[] = [];
+  let wordCount = 0;
   for (const sentence of sentences) {
-    const words = sentence.trim().split(/\s+/).filter(Boolean);
-    let cursor = 0;
-    while (cursor < words.length) {
-      const capacity = maxWords - buffer.length;
-      const remaining = words.length - cursor;
-      if (remaining <= capacity) {
-        buffer.push(...words.slice(cursor));
-        cursor = words.length;
-        if (buffer.length >= 7) { beats.push(buffer.join(' ')); buffer = []; }
-        continue;
-      }
-      const limit = cursor + capacity;
-      let cut = limit;
-      for (let i = limit - 1; i >= cursor + Math.min(6, capacity - 1); i -= 1) {
-        if (/[,:;—–]$/.test(words[i])) { cut = i + 1; break; }
-      }
-      buffer.push(...words.slice(cursor, cut));
-      beats.push(buffer.join(' '));
+    const count = sentence.split(/\s+/).filter(Boolean).length;
+    if (buffer.length && wordCount >= targetWords) {
+      scenes.push(buffer.join(' '));
       buffer = [];
-      cursor = cut;
+      wordCount = 0;
     }
+    buffer.push(sentence);
+    wordCount += count;
   }
-  if (buffer.length) {
-    if (buffer.length <= 4 && beats.length) beats[beats.length - 1] += ' ' + buffer.join(' ');
-    else beats.push(buffer.join(' '));
-  }
-  return beats.filter(Boolean);
+  if (buffer.length) scenes.push(buffer.join(' '));
+  return scenes;
 }
 
 function sceneDurationForNarration(text: string): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(3, Math.min(5, Math.round(words / 2.35)));
+  return Math.max(5, Math.min(8, Math.round(words / 2.35)));
 }
 
 function buildScenesFromScript(script: { hook: string; development: string; closing: string }, format: '9:16' | '16:9'): Scene[] {
@@ -567,7 +554,7 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
             </section>
             <section className="scene-planner">
               <div className="scene-planner-heading">
-                <div><div className="eyebrow">PLANIFICACIÓN VISUAL</div><h2>Generador de escenas</h2><p>Divide la narración en fragmentos y prepara la descripción visual y el prompt de cada toma.</p></div>
+                <div><div className="eyebrow">PLANIFICACIÓN VISUAL</div><h2>Generador de escenas</h2><p>Agrupa la narración por ideas completas y prepara una toma visual para cada bloque.</p></div>
                 <button type="button" className="primary-button" onClick={generateScenes}><WandSparkles size={16}/> {selected.scenes?.length ? 'Regenerar escenas (opcional)' : 'Generar escenas desde el guion'}</button>
               </div>
               <div className="scene-policy">Estilo: fotografía hiperrealista cinematográfica · Formato {selected.format}. Las reconstrucciones generadas se identifican por separado del material histórico auténtico.</div>

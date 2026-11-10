@@ -64,17 +64,26 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
     setProgress('');
   }
 
-  function drawImage(ctx: CanvasRenderingContext2D, index: number, elapsed: number, alpha = 1) {
+  function drawImage(ctx: CanvasRenderingContext2D, index: number, elapsedMs: number, alpha = 1, durationMs?: number) {
     const scene = scenes[index];
     const img = scene ? imageCache.current.get(scene.id) : undefined;
     if (!img || !img.complete || !img.naturalWidth) return;
     const scale = Math.max(width / img.naturalWidth, height / img.naturalHeight);
-    const zoom = 1 + Math.min(0.075, Math.max(0, elapsed) * 0.00012);
+    // A continuous Ken Burns move: a visible push-in plus a slow diagonal camera drift.
+    // The old formula reached its zoom limit in under a second, then held perfectly still.
+    const sceneDuration = durationMs ?? Math.max(1, Number(scene?.duration) || 1) * 1000;
+    const progress = Math.max(0, Math.min(1, elapsedMs / sceneDuration));
+    const eased = progress * progress * (3 - 2 * progress);
+    const zoom = 1.035 + 0.135 * eased;
     const dw = img.naturalWidth * scale * zoom;
     const dh = img.naturalHeight * scale * zoom;
+    const direction = index % 4;
+    const phase = progress * Math.PI / 2;
+    const driftX = Math.sin(phase) * width * 0.035 * (direction % 2 === 0 ? 1 : -1);
+    const driftY = (1 - Math.cos(phase)) * height * 0.028 * (direction < 2 ? 1 : -1);
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.drawImage(img, (width - dw) / 2, (height - dh) / 2, dw, dh);
+    ctx.drawImage(img, (width - dw) / 2 + driftX, (height - dh) / 2 + driftY, dw, dh);
     ctx.restore();
   }
 
@@ -116,8 +125,12 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
     if (!canvas || !ctx) return;
     ctx.fillStyle = '#10131b';
     ctx.fillRect(0, 0, width, height);
-    if (previousIndex >= 0 && transitionAlpha < 1) drawImage(ctx, previousIndex, Math.max(0, elapsed - 650), 1 - transitionAlpha);
-    drawImage(ctx, index, sceneElapsed * 1000, transitionAlpha);
+    if (previousIndex >= 0 && transitionAlpha < 1) {
+      const previousDuration = Math.max(1, Number(scenes[previousIndex]?.duration) || 1) * 1000;
+      drawImage(ctx, previousIndex, previousDuration, 1 - transitionAlpha, previousDuration);
+    }
+    const sceneDuration = Math.max(1, Number(scenes[index]?.duration) || 1) * 1000;
+    drawImage(ctx, index, sceneElapsed * 1000, transitionAlpha, sceneDuration);
     if (!imageCache.current.get(scenes[index]?.id || '')?.complete) {
       const gradient = ctx.createLinearGradient(0, 0, width, height);
       gradient.addColorStop(0, '#25213e'); gradient.addColorStop(1, '#10131b');

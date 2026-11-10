@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Film, Music2, Play, Square, Volume2 } from 'lucide-react';
+import { Download, Film, Music2, Square, Volume2 } from 'lucide-react';
+import { ALL_FORMATS, AudioBufferSource, BlobSource, BufferTarget, CanvasSource, Input, Output, Quality, WebMOutputFormat } from 'mediabunny';
 
 type EditorScene = { id: string; narration: string; duration: number };
 type Props = { scenes: EditorScene[]; imageUrls: Record<string, string>; format: '9:16' | '16:9' };
@@ -16,10 +17,7 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
   const [recording, setRecording] = useState(false);
   const [progress, setProgress] = useState('');
   const [previewIndex, setPreviewIndex] = useState(0);
-  const rafRef = useRef<number | null>(null);
   const stopRef = useRef(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const intervalRef = useRef<number | null>(null);
 
   const totalSeconds = scenes.reduce((sum, scene) => sum + Math.max(1, Number(scene.duration) || 1), 0);
   const width = format === '9:16' ? 720 : 1280;
@@ -39,8 +37,6 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
   }, [imageUrls]);
 
   useEffect(() => () => {
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
     if (voiceUrl) URL.revokeObjectURL(voiceUrl);
     if (musicUrl) URL.revokeObjectURL(musicUrl);
   }, [voiceUrl, musicUrl]);
@@ -137,166 +133,130 @@ export default function VideoEditor({ scenes, imageUrls, format }: Props) {
 
   async function exportVideo() {
     const canvas = canvasRef.current;
-    if (!canvas || !scenes.length) return;
-    if (!('MediaRecorder' in window) || !canvas.captureStream) {
-      setProgress('Este navegador no admite exportación de vídeo. Prueba con Chrome actualizado.');
+    if (!canvas || !scenes.length || recording) return;
+    if (!('VideoEncoder' in window) || !('AudioEncoder' in window)) {
+      setProgress('Este navegador no ofrece codificación multimedia moderna. Actualiza Chrome para exportar desde el teléfono.');
       return;
     }
-    if (recording) return;
-
-    const mp4Types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'];
-    const webmTypes = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
-    // Android MediaRecorder can produce a truncated MP4 despite a full recording loop.
-    // Prefer WebM, whose timestamps are more reliable in Chrome on Android.
-    const mimeType = webmTypes.find((type) => MediaRecorder.isTypeSupported(type))
-      || mp4Types.find((type) => MediaRecorder.isTypeSupported(type));
-    if (!mimeType) { setProgress('Este navegador no ofrece un formato de grabación compatible.'); return; }
 
     setRecording(true);
-    setProgress('Preparando ' + scenes.length + ' escenas · ' + totalSeconds + ' segundos…');
     stopRef.current = false;
-    const audioContext = new AudioContext();
-    const destination = audioContext.createMediaStreamDestination();
-    const audioElements: HTMLAudioElement[] = [];
+    setProgress('Preparando el motor de montaje…');
+    let output: Output | null = null;
     try {
-      const addAudio = (url: string, volume: number, loop: boolean) => {
-        if (!url) return;
-        const audio = new Audio(url);
-        audio.preload = 'auto';
-        audio.loop = loop;
-        audio.volume = 1;
-        const source = audioContext.createMediaElementSource(audio);
-        const gain = audioContext.createGain();
-        gain.gain.value = volume;
-        source.connect(gain);
-        gain.connect(destination);
-        gain.connect(audioContext.destination);
-        audioElements.push(audio);
-      };
-      addAudio(voiceUrl, voiceVolume, false);
-      addAudio(musicUrl, musicVolume, true);
-      await audioContext.resume();
-
-      await Promise.all(scenes.map((scene) => {
-        const image = imageCache.current.get(scene.id);
-        if (!image || image.complete) return Promise.resolve();
-        return new Promise<void>((resolve) => {
-          const finish = () => resolve();
-          image.addEventListener('load', finish, { once: true });
-          image.addEventListener('error', finish, { once: true });
-        });
-      }));
-
-      const stream = canvas.captureStream(30);
-      destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
-      const recorder = new MediaRecorder(stream, { mimeType });
-      recorderRef.current = recorder;
-      const chunks: BlobPart[] = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-      recorder.onerror = () => {
-        setProgress('El navegador interrumpió la exportación. Prueba con un vídeo más corto.');
-        setRecording(false);
-        stream.getTracks().forEach((track) => track.stop());
-        void audioContext.close();
-      };
-      recorder.onstop = () => {
-        const actualMime = recorder.mimeType || mimeType;
-        const extension = actualMime.includes('mp4') ? 'mp4' : 'webm';
-        const blob = new Blob(chunks, { type: actualMime });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'rikytech-documental.' + extension;
-
-        // Let the browser inspect the finalized Blob before releasing the recording tracks.
-        const probe = document.createElement('video');
-        probe.preload = 'metadata';
-        probe.muted = true;
-        let settled = false;
-        const finish = (validDuration?: number) => {
-          if (settled) return;
-          settled = true;
-          if (validDuration !== undefined && validDuration < totalSeconds * 0.8) {
-            setProgress('Exportación incompleta: el archivo contiene ' + validDuration.toFixed(1) + ' de ' + totalSeconds + ' segundos. No se descargó.');
-            URL.revokeObjectURL(url);
-          } else {
-            link.click();
-            setProgress(validDuration === undefined
-              ? 'El navegador no pudo leer la duración, pero se descargó el archivo para comprobar su reproducción.'
-              : 'Montaje exportado en ' + extension.toUpperCase() + ' · ' + validDuration.toFixed(1) + ' segundos.');
-            window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-          }
-          stream.getTracks().forEach((track) => track.stop());
-          audioElements.forEach((audio) => { audio.pause(); audio.src = ''; });
-          void audioContext.close();
-          recorderRef.current = null;
-          setRecording(false);
+      // Decode and mix the selected audio offline so it is synchronized by timestamps,
+      // rather than depending on real-time playback while the phone records the canvas.
+      let mixedAudio: AudioBuffer | null = null;
+      if (voiceUrl || musicUrl) {
+        const sampleRate = 48000;
+        const offline = new OfflineAudioContext(2, Math.ceil(totalSeconds * sampleRate), sampleRate);
+        const loadAudio = async (url: string) => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error('No se pudo leer un archivo de audio.');
+          return offline.decodeAudioData(await response.arrayBuffer());
         };
-        probe.onloadedmetadata = () => finish(Number.isFinite(probe.duration) ? probe.duration : undefined);
-        probe.onerror = () => finish(undefined);
-        probe.src = url;
-        probe.load();
-        window.setTimeout(() => finish(undefined), 4000);
-      };
-
-      recorder.start();
-      for (const audio of audioElements) {
-        try { await audio.play(); } catch {
-          setProgress('No se pudo iniciar uno de los audios. Revisa el archivo y vuelve a exportar.');
-          recorder.stop();
-          return;
+        if (voiceUrl) {
+          const buffer = await loadAudio(voiceUrl);
+          const source = offline.createBufferSource();
+          const gain = offline.createGain();
+          source.buffer = buffer;
+          gain.gain.value = voiceVolume;
+          source.connect(gain).connect(offline.destination);
+          source.start(0);
         }
+        if (musicUrl) {
+          const buffer = await loadAudio(musicUrl);
+          const source = offline.createBufferSource();
+          const gain = offline.createGain();
+          source.buffer = buffer;
+          source.loop = true;
+          gain.gain.value = musicVolume;
+          source.connect(gain).connect(offline.destination);
+          source.start(0);
+        }
+        setProgress('Mezclando narración y música…');
+        mixedAudio = await offline.startRendering();
       }
 
-      const totalMs = Math.max(1000, totalSeconds * 1000);
-      const started = performance.now();
-      let previousIndex = -1;
-      let lastProgressUpdate = 0;
-      const render = () => {
-        const elapsed = performance.now() - started;
-        if (stopRef.current || elapsed >= totalMs) {
-          drawFrame(scenes.length - 1, totalMs, Math.max(0, Number(scenes[scenes.length - 1].duration) || 1));
-          if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
-          intervalRef.current = null;
-          window.setTimeout(() => {
-            if (recorder.state !== 'inactive') recorder.stop();
-          }, 180);
-          audioElements.forEach((audio) => audio.pause());
-          return;
+      const target = new BufferTarget();
+      output = new Output({ format: new WebMOutputFormat(), target });
+      const videoSource = new CanvasSource(canvas, {
+        codec: 'vp8',
+        quality: new Quality({ bitrate: 3_500_000 }),
+        latencyMode: 'quality',
+        keyFrameInterval: 2,
+      });
+      output.addVideoTrack(videoSource, { frameRate: 24 });
+      let audioSource: AudioBufferSource | null = null;
+      if (mixedAudio) {
+        audioSource = new AudioBufferSource({ codec: 'opus', quality: new Quality({ bitrate: 128_000 }) });
+        output.addAudioTrack(audioSource);
+      }
+
+      await output.start();
+      const fps = 24;
+      const frameCount = Math.ceil(totalSeconds * fps);
+      const renderVideo = async () => {
+        for (let frame = 0; frame < frameCount; frame++) {
+          if (stopRef.current) throw new Error('Exportación detenida por el usuario.');
+          const timestamp = frame / fps;
+          let index = scenes.length - 1;
+          for (let i = 0; i < scenes.length; i++) {
+            const end = sceneStarts[i] + Math.max(1, Number(scenes[i].duration) || 1);
+            if (timestamp < end) { index = i; break; }
+          }
+          const sceneElapsed = Math.max(0, timestamp - sceneStarts[index]);
+          const transitionDuration = 0.65;
+          const isTransition = index > 0 && sceneElapsed < transitionDuration;
+          const alpha = isTransition ? Math.min(1, sceneElapsed / transitionDuration) : 1;
+          drawFrame(index, timestamp * 1000, sceneElapsed, alpha, isTransition ? index - 1 : -1);
+          await videoSource.add(timestamp, 1 / fps, { keyFrame: frame % (fps * 2) === 0 });
+          if (index !== previewIndex) setPreviewIndex(index);
+          if (frame % 24 === 0 || frame === frameCount - 1) {
+            setProgress('Renderizando fotogramas ' + (frame + 1) + ' de ' + frameCount + ' · ' + Math.round((frame + 1) / frameCount * 100) + '%');
+          }
         }
-        const seconds = elapsed / 1000;
-        let index = scenes.length - 1;
-        for (let i = 0; i < scenes.length; i++) {
-          const end = sceneStarts[i] + Math.max(1, Number(scenes[i].duration) || 1);
-          if (seconds < end) { index = i; break; }
-        }
-        const sceneElapsed = Math.max(0, seconds - sceneStarts[index]);
-        const transitionDuration = 0.65;
-        const isTransition = index > 0 && sceneElapsed < transitionDuration;
-        const alpha = isTransition ? Math.min(1, sceneElapsed / transitionDuration) : 1;
-        const oldIndex = isTransition ? index - 1 : -1;
-        if (index !== previousIndex) { previousIndex = index; setPreviewIndex(index); }
-        drawFrame(index, elapsed, sceneElapsed, alpha, oldIndex);
-        if (performance.now() - lastProgressUpdate > 450) {
-          lastProgressUpdate = performance.now();
-          setProgress('Exportando escena ' + (index + 1) + ' de ' + scenes.length + ' · ' + Math.min(100, Math.round(elapsed / totalMs * 100)) + '%');
-        }
+        videoSource.close();
       };
-      render();
-      intervalRef.current = window.setInterval(render, 1000 / 30);
+      const tasks: Promise<void>[] = [renderVideo()];
+      if (audioSource && mixedAudio) {
+        tasks.push(audioSource.add(mixedAudio).then(() => audioSource?.close()));
+      }
+      await Promise.all(tasks);
+      setProgress('Finalizando archivo de vídeo…');
+      await output.finalize();
+
+      const buffer = target.buffer;
+      if (!buffer || buffer.byteLength < 10000) throw new Error('El archivo final está vacío o incompleto.');
+      const blob = new Blob([buffer], { type: 'video/webm' });
+      // Read the finished container and verify its real duration before download.
+      const check = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+      const actualDuration = await check.computeDuration();
+      if (!Number.isFinite(actualDuration) || Math.abs(actualDuration - totalSeconds) > 1.0) {
+        throw new Error('El archivo generado dura ' + (Number.isFinite(actualDuration) ? actualDuration.toFixed(1) : 'un tiempo desconocido') + ' s; se esperaban ' + totalSeconds + ' s. No se descargó.');
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'rikytech-documental.webm';
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setProgress('Vídeo completo verificado · ' + actualDuration.toFixed(1) + ' segundos · WEBM');
     } catch (error) {
-      audioElements.forEach((audio) => { audio.pause(); audio.src = ''; });
-      void audioContext.close();
+      if (output) {
+        try { await output.cancel(); } catch { /* Output may already be finalized. */ }
+      }
+      const message = error instanceof Error ? error.message : 'Error desconocido durante el montaje.';
+      setProgress(message.includes('detenida') ? message : 'No se pudo completar el montaje: ' + message);
+    } finally {
       setRecording(false);
-      setProgress('No se pudo iniciar el montaje. Comprueba los archivos de audio e inténtalo de nuevo.');
+      stopRef.current = false;
     }
   }
 
   function stopExport() {
     stopRef.current = true;
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    if (intervalRef.current !== null) { window.clearInterval(intervalRef.current); intervalRef.current = null; }
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
+    setProgress('Deteniendo el montaje de forma segura…');
   }
 
   return <section className="video-editor">

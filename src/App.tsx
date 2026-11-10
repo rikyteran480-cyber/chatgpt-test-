@@ -8,11 +8,7 @@ import VideoEditor from './VideoEditor';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
-function splitNarrationIntoBeats(value: unknown, maxWords = 11): string[] {
-  // Las respuestas de IA pueden omitir narration o devolver null; normalizar evita
-  // que .match() se ejecute sobre undefined y bloquea escenas vacías.
-  const text = typeof value === 'string' ? value.trim() : '';
-  if (!text) return [];
+function splitNarrationIntoBeats(text: string, maxWords = 11): string[] {
   const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
   const beats: string[] = [];
   let buffer: string[] = [];
@@ -482,17 +478,10 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
         previousWorks
       });
       const generatedScenes = Array.isArray(result.scenes) && result.scenes.length > 0
-        ? result.scenes.filter((scene) => scene && typeof scene === 'object')
-        : buildScenesFromScript({ hook: result.hook ?? '', development: result.development ?? '', closing: result.closing ?? '' }, selected.format);
-      const scenes: Scene[] = generatedScenes.flatMap((rawScene) => {
-        const scene = {
-          narration: typeof rawScene.narration === 'string' ? rawScene.narration : '',
-          visualDescription: typeof rawScene.visualDescription === 'string' ? rawScene.visualDescription : 'Reconstrucción histórica del fragmento narrado.',
-          prompt: typeof rawScene.prompt === 'string' ? rawScene.prompt : '',
-          imageType: rawScene.imageType,
-        };
-        if (!scene.narration.trim()) return [];
-        return splitNarrationIntoBeats(scene.narration).map((beat, beatIndex) => {
+        ? result.scenes
+        : buildScenesFromScript({ hook: result.hook, development: result.development, closing: result.closing }, selected.format);
+      const scenes: Scene[] = generatedScenes.flatMap((scene) =>
+        splitNarrationIntoBeats(scene.narration).map((beat, beatIndex) => {
           const cameraDirections = [
             'plano general cinematográfico que sitúe el lugar y la época',
             'plano medio que destaque la acción humana principal',
@@ -510,8 +499,8 @@ Cuando pegue la narración en el editor de RikyTech, podré generar escenas sin 
             prompt: scene.prompt + ' Enfoque narrativo exacto de este plano: ' + beat + '. Encuadre: ' + cameraDirections[beatIndex % cameraDirections.length] + '. Cada plano debe aportar una imagen distinta y coherente, sin repetir exactamente la composición anterior.',
             duration: sceneDurationForNarration(beat)
           };
-        });
-      });
+        })
+      );
       const updated: Project = {
         ...selected,
         script: { hook: result.hook, development: result.development, closing: result.closing },

@@ -8,28 +8,56 @@ import VideoEditor from './VideoEditor';
 
 const DEFAULT_VISUAL_STYLE = 'Fotografía hiperrealista cinematográfica' as const;
 
+function splitNarrationIntoBeats(text: string, maxWords = 11): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
+  const beats: string[] = [];
+  let buffer: string[] = [];
+  for (const sentence of sentences) {
+    const words = sentence.trim().split(/\s+/).filter(Boolean);
+    let cursor = 0;
+    while (cursor < words.length) {
+      const capacity = maxWords - buffer.length;
+      const remaining = words.length - cursor;
+      if (remaining <= capacity) {
+        buffer.push(...words.slice(cursor));
+        cursor = words.length;
+        if (buffer.length >= 7) { beats.push(buffer.join(' ')); buffer = []; }
+        continue;
+      }
+      const limit = cursor + capacity;
+      let cut = limit;
+      for (let i = limit - 1; i >= cursor + Math.min(6, capacity - 1); i -= 1) {
+        if (/[,:;—–]$/.test(words[i])) { cut = i + 1; break; }
+      }
+      buffer.push(...words.slice(cursor, cut));
+      beats.push(buffer.join(' '));
+      buffer = [];
+      cursor = cut;
+    }
+  }
+  if (buffer.length) {
+    if (buffer.length <= 4 && beats.length) beats[beats.length - 1] += ' ' + buffer.join(' ');
+    else beats.push(buffer.join(' '));
+  }
+  return beats.filter(Boolean);
+}
+
+function sceneDurationForNarration(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(3, Math.min(5, Math.round(words / 2.35)));
+}
+
 function buildScenesFromScript(script: { hook: string; development: string; closing: string }, format: '9:16' | '16:9'): Scene[] {
   const sections = [
     { label: 'Gancho', text: script.hook ?? '' },
     { label: 'Desarrollo', text: script.development ?? '' },
     { label: 'Cierre', text: script.closing ?? '' },
   ];
-  const chunks: { section: string; text: string }[] = [];
-  for (const part of sections) {
-    const sentences = part.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
-    let buffer = '';
-    for (const sentence of sentences.map((value) => value.trim()).filter(Boolean)) {
-      buffer = buffer ? buffer + ' ' + sentence : sentence;
-      if (buffer.split(/\\s+/).length >= 22) {
-        chunks.push({ section: part.label, text: buffer });
-        buffer = '';
-      }
-    }
-    if (buffer) chunks.push({ section: part.label, text: buffer });
-  }
+  const chunks = sections.flatMap((part) =>
+    splitNarrationIntoBeats(part.text).map((text) => ({ section: part.label, text }))
+  );
   return chunks.map((chunk) => {
-    const words = chunk.text.split(/\\s+/).length;
-    const duration = Math.max(3, Math.min(8, Math.round(words / 2.35)));
+    const duration = sceneDurationForNarration(chunk.text);
     return {
       id: crypto.randomUUID(),
       narration: chunk.text,
@@ -375,22 +403,11 @@ export default function App() {
       { label: 'Desarrollo', text: selected.script?.development ?? '' },
       { label: 'Cierre', text: selected.script?.closing ?? '' },
     ];
-    const chunks: { section: string; text: string }[] = [];
-    for (const part of parts) {
-      const sentences = part.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
-      let buffer = '';
-      for (const sentence of sentences.map((value) => value.trim()).filter(Boolean)) {
-        buffer = buffer ? buffer + ' ' + sentence : sentence;
-        if (buffer.split(/\s+/).length >= 22) {
-          chunks.push({ section: part.label, text: buffer });
-          buffer = '';
-        }
-      }
-      if (buffer) chunks.push({ section: part.label, text: buffer });
-    }
+    const chunks = parts.flatMap((part) =>
+      splitNarrationIntoBeats(part.text).map((text) => ({ section: part.label, text }))
+    );
     const scenes: Scene[] = chunks.map((chunk) => {
-      const words = chunk.text.split(/\s+/).length;
-      const duration = Math.max(3, Math.min(8, Math.round(words / 2.35)));
+      const duration = sceneDurationForNarration(chunk.text);
       const imageType = 'Reconstrucción IA fotorrealista' as const;
       const visualDescription = chunk.section + ': Recrear el momento histórico con apariencia de fotografía documental realista; respetar época, arquitectura, vestuario y materiales.';
       const prompt = 'Fotografía hiperrealista cinematográfica de una escena histórica que represente: ' + chunk.text + ' Contexto histórico riguroso, iluminación natural, texturas y materiales auténticos, composición documental, formato ' + selected.format + '. Sin ilustración, sin caricatura, sin estética de videojuego.';
